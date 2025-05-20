@@ -626,6 +626,56 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
     lang = data.get('lang', 'ru')
     API_USER = "http://localhost:8000/users/"
     
+    # --- Локализация ключей для детализации ---
+    details_keys = {
+        'ru': {
+            'profile_scores': 'Профильные баллы',
+            'profession_scores': 'Профессиональные баллы',
+            'artifact': 'Артефакт',
+            'lang': 'Язык',
+        },
+        'kg': {
+            'profile_scores': 'Профильдик упайлар',
+            'profession_scores': 'Кесиптик упайлар',
+            'artifact': 'Артефакт',
+            'lang': 'Тил',
+        }
+    }[lang if lang in ['ru', 'kg'] else 'ru']
+    
+    # --- Вдохновляющие заголовки и фразы ---
+    result_titles = {
+        'ru': "<b>🎉 Твой путь только начинается!</b>",
+        'kg': "<b>🎉 Сенин жолуң эми башталды!</b>"
+    }
+    artifact_phrases = {
+        'ru': "🏆 Ты получил уникальный артефакт! Это твой символ достижений и новых открытий:",
+        'kg': "🏆 Сен уникалдуу артефакт алдың! Бул сенин жетишкендиктериңдин жана жаңы ачылыштарыңдын белгиси:"
+    }
+    all_collected_phrases = {
+        'ru': "🎊 Ты собрал все артефакты этого профиля! Ты — настоящий исследователь!",
+        'kg': "🎊 Бул профилдин бардык артефакттарын чогулттуң! Сен чыныгы изилдөөчүсүң!"
+    }
+    no_profession_phrases = {
+        'ru': "🤔 Не удалось определить профессию. Попробуй пройти тест ещё раз или выбери другой путь!",
+        'kg': "🤔 Кесип аныкталган жок. Тестти кайра өтүп көр же башка жолду танда!"
+    }
+    top_professions_title = {
+        'ru': "<b>🔝 Твои сильные стороны (ТОП-3 профессии):</b>",
+        'kg': "<b>🔝 Сенин күчтүү жактарың (ТОП-3 кесип):</b>"
+    }
+    top_profiles_title = {
+        'ru': "<b>🌈 Твои ведущие профили:</b>",
+        'kg': "<b>🌈 Сенин негизги профилдериң:</b>"
+    }
+    details_title = {
+        'ru': "<b>📊 Детализация результата:</b>",
+        'kg': "<b>📊 Натыйжанын деталдары:</b>"
+    }
+    retry_text = {
+        'ru': "🔄 Пройти тест заново",
+        'kg': "🔄 Тестти кайра өтүү"
+    }
+    
     # --- Фильтруем только профессии, для которых есть артефакт ---
     prof_keys = set(ARTIFACTS_BY_PROFESSION.keys())
     prof_scores = {k: v for k, v in profession_scores.items() if k in prof_keys}
@@ -685,44 +735,52 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
     
     # --- КРАСИВОЕ ОФОРМЛЕНИЕ ---
     lines = []
-    lines.append(get_message("test_result_title", lang))
+    lines.append(result_titles[lang])
     lines.append("<b>━━━━━━━━━━━━━━━━━━━━━━</b>")
     
     if all_collected:
-        lines.append(get_message("test_result_all_collected", lang))
+        lines.append(all_collected_phrases[lang])
     elif artifact:
-        lines.append(get_message("test_result_artifact", lang) + f" <i>{artifact['name']}</i>\n{artifact['desc']}")
+        lines.append(artifact_phrases[lang] + f"\n<b>{artifact['name']}</b> — <i>{artifact['desc']}</i>")
     else:
-        lines.append(get_message("test_result_no_profession", lang))
+        lines.append(no_profession_phrases[lang])
     
     lines.append("<b>━━━━━━━━━━━━━━━━━━━━━━</b>")
     
     # --- Топ-3 профессии ---
     if not profession_scores:
-        lines.append(get_message("test_result_no_profession", lang))
+        lines.append(no_profession_phrases[lang])
     else:
         top_professions = sorted(profession_scores.items(), key=lambda x: x[1], reverse=True)[:3]
-        lines.append(get_message("test_result_top_professions", lang))
+        lines.append(top_professions_title[lang])
         for name, score in top_professions:
-            lines.append(f"<b>{name}</b> — <b>{score} {get_message('test_result_points', lang)}</b>")
+            lines.append(f"<b>• {name}</b> — <b>{score} ⭐</b>")
     
     # --- Топ-3 профиля (для информации) ---
     if profile_scores:
         top_profiles = sorted(profile_scores.items(), key=lambda x: x[1], reverse=True)[:3]
-        lines.append("\n" + get_message("test_result_top_profiles", lang))
+        lines.append(top_profiles_title[lang])
         for name, score in top_profiles:
-            lines.append(f"<b>{name}</b> — <b>{score} {get_message('test_result_points', lang)}</b>")
-        # Определяем top_profile для дальнейшего использования
+            lines.append(f"<b>• {name}</b> — <b>{score} ⭐</b>")
         top_profile = top_profiles[0][0] if top_profiles else "-"
     else:
         top_profile = "-"
     
     lines.append("<b>━━━━━━━━━━━━━━━━━━━━━━</b>")
+    
+    # --- Детализация (profile_scores, profession_scores, artifact, lang) ---
+    details_lines = []
+    details_lines.append(f"<b>• {details_keys['profile_scores']}:</b> <code>{profile_scores}</code>")
+    details_lines.append(f"<b>• {details_keys['profession_scores']}:</b> <code>{profession_scores}</code>")
+    details_lines.append(f"<b>• {details_keys['artifact']}:</b> <code>{artifact_key if artifact_key else '-'}</code>")
+    details_lines.append(f"<b>• {details_keys['lang']}:</b> <code>{lang}</code>")
+    lines.append(details_title[lang] + '\n' + '\n'.join(details_lines))
+    
     text = "\n".join(lines)
     
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=get_message("test_result_retry", lang), callback_data="restart_test")]
+            [InlineKeyboardButton(text=retry_text[lang], callback_data="restart_test")]
         ]
     )
     
