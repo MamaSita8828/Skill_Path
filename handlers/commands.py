@@ -13,7 +13,6 @@ from utils.messages import get_message, get_user_lang, format_test_stats
 from utils.states import GoalStates, MaterialStates, NoteStates, ProfileStates, SettingsStates
 from utils.error_handler import handle_errors
 import aiohttp
-from utils.database import db
 
 router = Router()
 
@@ -31,7 +30,7 @@ async def cmd_start(message: Message):
             "📊 Следи за своим прогрессом, возвращайся к тесту и открывай новые возможности!\n\n"
             "<i>Каждый твой выбор — шаг к мечте. Готов начать путешествие?</i>"
         ),
-        'kg': (
+        'ky': (
             "<b>SkillPath'ка кош келиңиз!</b>\n\n"
             "🧩 <b>SkillPath</b> — бул кесиптик багыт берүүчү квест-бот. Ал сага күчтүү жактарыңды ачууга, келечектеги кесиптер менен таанышууга жана уникалдуу артефакттарды чогултууга жардам берет!\n\n"
             "🔍 Интерактивдүү тесттен өтүп, сага ылайыктуу жолду бил.\n"
@@ -97,7 +96,7 @@ async def show_help(message: Message):
             "<b>✨ Не бойся пробовать новое — каждый шаг открывает новые горизонты!</b>\n\n"
             "Если возникли вопросы — напиши /start или воспользуйся кнопками ниже!"
         ),
-        'kg': (
+        'ky': (
             "<b>❓ Жардам</b>\n\n"
             "<i>SkillPath — кесиптер жана ачылыштар дүйнөсүндөгү сенин жол көрсөтүүчүң!</i>\n\n"
             "<b>🧭 Бул жерде эмне кыла аласың?</b>\n"
@@ -160,7 +159,7 @@ async def change_language_menu(message: Message, state: FSMContext):
     LANG_INLINE_KB = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Русский", callback_data="lang_ru"),
-             InlineKeyboardButton(text="Кыргызский", callback_data="lang_kg")]
+             InlineKeyboardButton(text="Кыргызский", callback_data="lang_ky")]
         ]
     )
     await message.answer("Выберите язык для использования в боте:", reply_markup=LANG_INLINE_KB)
@@ -183,11 +182,11 @@ async def show_profile(message: Message):
     except Exception as e:
         print(f"[DEBUG] Ошибка получения профиля из API: {e}")
     # --- Получаем данные из локальной базы ---
-    db_data = db._read_db()
-    user_local = db_data.get('users', {}).get(str(user_id), {})
+    # db_data = db._read_db()
+    # user_local = db_data.get('users', {}).get(str(user_id), {})
     # --- Объединяем данные: приоритет — API ---
     def get_field(field, default="-"):
-        return user_api.get(field) or user_local.get(field) or default
+        return user_api.get(field) or default
     fio = get_field('fio')
     school = get_field('school')
     class_number = get_field('class_number')
@@ -197,7 +196,7 @@ async def show_profile(message: Message):
     gender = get_field('gender')
     birth_year = get_field('birth_year')
     # --- Прогресс по артефактам ---
-    portals_local = set(user_local.get('portals', []))
+    portals_local = set(user_api.get('portals', []) or [])
     artifacts_api = set(user_api.get('artifacts', []) or [])
     portals = portals_local.union(artifacts_api)
     from handlers.test import ARTIFACTS_BY_PROFESSION
@@ -227,7 +226,7 @@ async def show_profile(message: Message):
     # Мультиязычные подписи и вдохновляющая шапка
     profile_headers = {
         'ru': "<b>🦊 Твой герой в SkillPath</b>\n\n<code>✨ Каждый артефакт — твоя победа! ✨</code>",
-        'kg': "<b>🦊 SkillPathтагы сенин баатырыӊ</b>\n\n<code>✨ Ар бир артефакт — сенин жетишкендигиӊ! ✨</code>"
+        'ky': "<b>🦊 SkillPathтагы сенин баатырыӊ</b>\n\n<code>✨ Ар бир артефакт — сенин жетишкендигиӊ! ✨</code>"
     }
     labels = {
         'ru': {
@@ -236,7 +235,7 @@ async def show_profile(message: Message):
             'artifacts': '🗝️ Артефакты', 'professions': '🌈 Уникальные профили', 'tests': '🧩 Тестов пройдено',
             'progress': '📊 Прогресс коллекции', 'achiev': '🏅 Ачивки',
         },
-        'kg': {
+        'ky': {
             'fio': '📜 Аты-жөнү', 'school': '🏫 Мектеп', 'class': '🎒 Класс', 'city': '🌍 Шаар', 'lang': '🗣️ Тил',
             'gender': '🧑‍🤝‍🧑 Жынысы', 'birth_year': '📅 Туулган жылы',
             'artifacts': '🗝️ Артефакттар', 'professions': '🌈 Уникалдуу профилдер', 'tests': '🧩 Тесттер',
@@ -244,33 +243,39 @@ async def show_profile(message: Message):
         }
     }[lang]
     # Человеко-понятный язык
-    lang_map = {"ru": "Русский", "kg": "Кыргызский", None: "Не выбран", "русский": "Русский", "кыргызский": "Кыргызский"}
+    lang_map = {"ru": "Русский", "ky": "Кыргызский", None: "Не выбран", "русский": "Русский", "кыргызский": "Кыргызский"}
     language_human = lang_map.get(str(language).lower(), language or "-")
     gender_human = gender.capitalize() if gender else "-"
     # Мотивация
     motivation = {
         'ru': "<i>Продолжай собирать артефакты, открывай новые порталы и вдохновляйся своим прогрессом! Ты — герой своего пути! 🦊</i>",
-        'kg': "<i>Жаңы артефакттарды чогулт, порталдарды ач жана прогрессиӊ менен сыймыктан! Сен — өз жолуӊдун баатырысыӊ! 🦊</i>"
+        'ky': "<i>Жаңы артефакттарды чогулт, порталдарды ач жана прогрессиӊ менен сыймыктан! Сен — өз жолуӊдун баатырысыӊ! 🦊</i>"
     }[lang]
+    # --- Переводим уникальные профили для вывода ---
+    from handlers.test import PROFILE_TRANSLATIONS
+    unique_professions_display = [PROFILE_TRANSLATIONS[lang].get(p, p) for p in unique_professions]
     # Формируем текст профиля
-    text = f"""
-{profile_headers[lang]}
-
-{labels['fio']}: <b>{fio}</b>
-{labels['school']}: <b>{school}</b>
-{labels['class']}: <b>{class_number}{class_letter}</b>
-{labels['city']}: <b>{city}</b>
-{labels['lang']}: <b>{language_human}</b>
-{labels['gender']}: <b>{gender_human}</b>
-{labels['birth_year']}: <b>{birth_year}</b>
-
-{labels['artifacts']}: <b>{collected}/{total_artifacts}</b>  {achiev}
-{labels['progress']}: {progress_bar}
-{labels['professions']}: <b>{len(unique_professions)}</b>
-{labels['tests']}: <b>{len(results)}</b>
-
-{motivation}
-"""
+    text_lines = [
+        profile_headers[lang],
+        "",
+        f"{labels['fio']}: <b>{fio}</b>",
+        f"{labels['school']}: <b>{school}</b>",
+        f"{labels['class']}: <b>{class_number}{class_letter}</b>",
+        f"{labels['city']}: <b>{city}</b>",
+        f"{labels['lang']}: <b>{language_human}</b>",
+        f"{labels['gender']}: <b>{gender_human}</b>",
+        f"{labels['birth_year']}: <b>{birth_year}</b>",
+        "",
+        f"{labels['artifacts']}: <b>{collected}/{total_artifacts}</b>  {achiev}",
+        f"{labels['progress']}: {progress_bar}",
+        f"{labels['professions']}: <b>{len(unique_professions_display)}</b>"
+    ]
+    if lang == 'ky' and unique_professions_display:
+        text_lines.append(f"<b>{', '.join(unique_professions_display)}</b>")
+    text_lines.append(f"{labels['tests']}: <b>{len(results)}</b>")
+    text_lines.append("")
+    text_lines.append(motivation)
+    text = "\n".join(text_lines)
     await message.answer(text, parse_mode="HTML")
 
 def register_handlers(dispatcher):

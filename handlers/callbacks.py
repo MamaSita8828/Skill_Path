@@ -1,6 +1,8 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
+import json
+import aiohttp
 
 from utils.error_handler import handle_errors
 from utils.messages import get_message, normalize_lang, get_user_lang
@@ -8,18 +10,18 @@ from utils.keyboards import (
     get_main_keyboard,
     get_goals_keyboard,
     get_progress_keyboard,
-    get_materials_keyboard
+    get_materials_keyboard,
+    get_settings_keyboard
 )
 from utils.states import RegistrationStates
 from utils.states import SettingsStates
-import aiohttp
 
 router = Router()
 
 LANG_INLINE_KB = InlineKeyboardMarkup(
     inline_keyboard=[
         [InlineKeyboardButton(text="Русский", callback_data="lang_ru"),
-         InlineKeyboardButton(text="Кыргызский", callback_data="lang_kg")]
+         InlineKeyboardButton(text="Кыргызский", callback_data="lang_ky")]
     ]
 )
 
@@ -90,9 +92,9 @@ async def change_language_callback(callback: CallbackQuery, state: FSMContext):
     await state.set_state(SettingsStates.waiting_for_language)
     await callback.answer()
 
-@router.callback_query(F.data.in_(["lang_ru", "lang_kg"]))
+@router.callback_query(F.data.in_(["lang_ru", "lang_ky"]))
 async def set_language_callback(callback: CallbackQuery, state: FSMContext):
-    lang = "русский" if callback.data == "lang_ru" else "кыргызский"
+    lang = "ru" if callback.data == "lang_ru" else "ky"
     API_URL = "http://localhost:8000/users/"
     user_id = callback.from_user.id
     # Получаем текущие данные пользователя
@@ -103,22 +105,16 @@ async def set_language_callback(callback: CallbackQuery, state: FSMContext):
         user = {"telegram_id": user_id, "language": lang}
     else:
         user["language"] = lang
+    # Сериализация списков, если нужно
+    if isinstance(user.get('artifacts'), list):
+        user['artifacts'] = json.dumps(user['artifacts'], ensure_ascii=False)
+    if isinstance(user.get('opened_profiles'), list):
+        user['opened_profiles'] = json.dumps(user['opened_profiles'], ensure_ascii=False)
     async with aiohttp.ClientSession() as session:
         await session.post(API_URL, json=user)
-    # Получаем язык для сообщений
-    lang_code = normalize_lang(lang)
-    await callback.message.edit_text(get_message("language_changed", lang_code, lang_name=lang.capitalize()))
+    await callback.message.edit_text(get_message("language_changed", lang, lang_name="Кыргызский" if lang == "ky" else "Русский"))
     await state.clear()
-    # Добавляю кнопку обновить меню
-    update_kb = InlineKeyboardMarkup(
-        inline_keyboard=[[
-            InlineKeyboardButton(text="🔄 Обновить меню", callback_data="update_main_menu")
-        ]]
-    )
-    await callback.message.answer(
-        get_message("language_changed", lang_code, lang_name=lang.capitalize()),
-        reply_markup=update_kb
-    )
+    await callback.message.answer(get_message("welcome", lang), reply_markup=get_main_keyboard(lang))
     await callback.answer()
 
 @router.callback_query(F.data == "update_main_menu")
@@ -140,11 +136,11 @@ async def show_profile(callback: CallbackQuery):
         await callback.answer()
         return
     # Человеко-понятный язык
-    lang_map = {"ru": "Русский", "kg": "Кыргызский", None: "Не выбран", "русский": "Русский", "кыргызский": "Кыргызский"}
+    lang_map = {"ru": "Русский", "ky": "Кыргызский", None: "Не выбран", "русский": "Русский", "кыргызский": "Кыргызский"}
     user_lang = user.get('language')
     user_lang = lang_map.get(str(user_lang).lower(), user_lang or "-")
     # Креативный шаблон
-    if lang == "kg":
+    if lang == "ky":
         text = (
             "🧙‍♂️ <b>Сенин SkillPath баатырың</b>\n\n"
             f"📜 <b>Аты-жөнү:</b> {user.get('fio', '-') }\n"

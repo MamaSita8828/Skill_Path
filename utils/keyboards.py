@@ -59,4 +59,16 @@ def get_materials_keyboard(lang="ru") -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=b["back"], callback_data="back_to_main")]
         ]
     )
+    return keyboard
+
+def get_settings_keyboard(lang="ru"):
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Изменить язык" if lang == "ru" else "Тилди өзгөртүү",
+                callback_data="change_language"
+            )],
+            # Добавьте другие кнопки настроек, если нужно
+        ]
+    )
     return keyboard 

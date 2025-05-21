@@ -12,7 +12,7 @@ router = Router()
 LANG_INLINE_KB = InlineKeyboardMarkup(
     inline_keyboard=[
         [InlineKeyboardButton(text="Русский", callback_data="lang_ru"),
-         InlineKeyboardButton(text="Кыргызский", callback_data="lang_kg")]
+         InlineKeyboardButton(text="Кыргызский", callback_data="lang_ky")]
     ]
 )
 

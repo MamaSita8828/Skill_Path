@@ -1,6 +1,10 @@
 from fastapi import FastAPI, Query
-from .models import User, TestResult
+from .models import User, TestResult, TestProgress
 from .db import get_connection
+from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
+import json
+from datetime import datetime
 
 app = FastAPI()
 
@@ -8,7 +12,13 @@ app = FastAPI()
 def create_or_update_user(user: User):
     conn = get_connection()
     cursor = conn.cursor()
-    # Создаём таблицу, если не существует
+    # Сериализация полей
+    user_dict = user.dict()
+    for field in ["artifacts", "opened_profiles"]:
+        if isinstance(user_dict.get(field), list):
+            user_dict[field] = json.dumps(user_dict[field], ensure_ascii=False)
+        elif user_dict.get(field) is None:
+            user_dict[field] = json.dumps([])
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -20,26 +30,15 @@ def create_or_update_user(user: User):
             gender VARCHAR(10),
             birth_year INT,
             city VARCHAR(255),
-            language VARCHAR(20)
-        )
-    """)
-    # Вставка или обновление
+            language VARCHAR(20),
+            artifacts TEXT,
+            opened_profiles TEXT
+        )""")
     cursor.execute("""
-        INSERT INTO users (telegram_id, fio, school, class_number, class_letter, gender, birth_year, city, language)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            fio=VALUES(fio),
-            school=VALUES(school),
-            class_number=VALUES(class_number),
-            class_letter=VALUES(class_letter),
-            gender=VALUES(gender),
-            birth_year=VALUES(birth_year),
-            city=VALUES(city),
-            language=VALUES(language)
-    """, (
-        user.telegram_id, user.fio, user.school, user.class_number, user.class_letter,
-        user.gender, user.birth_year, user.city, user.language
-    ))
+        INSERT INTO users (telegram_id, fio, school, class_number, class_letter, gender, birth_year, city, language, artifacts, opened_profiles)
+        VALUES (%(telegram_id)s, %(fio)s, %(school)s, %(class_number)s, %(class_letter)s, %(gender)s, %(birth_year)s, %(city)s, %(language)s, %(artifacts)s, %(opened_profiles)s)
+        ON DUPLICATE KEY UPDATE fio=VALUES(fio), school=VALUES(school), class_number=VALUES(class_number), class_letter=VALUES(class_letter), gender=VALUES(gender), birth_year=VALUES(birth_year), city=VALUES(city), language=VALUES(language), artifacts=VALUES(artifacts), opened_profiles=VALUES(opened_profiles)
+    """, user_dict)
     conn.commit()
     cursor.close()
     conn.close()
@@ -51,11 +50,15 @@ def get_user(telegram_id: int = Query(...)):
     cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT * FROM users WHERE telegram_id = %s", (telegram_id,))
     user = cursor.fetchone()
+    if user:
+        for field in ["artifacts", "opened_profiles"]:
+            try:
+                user[field] = json.loads(user[field]) if user[field] else []
+            except Exception:
+                user[field] = []
     cursor.close()
     conn.close()
-    if user:
-        return user
-    return {}
+    return user or {}
 
 @app.post("/test_results/")
 def save_test_result(result: TestResult):
@@ -92,3 +95,69 @@ def get_test_results(telegram_id: int = Query(...)):
     cursor.close()
     conn.close()
     return results
+
+@app.post("/test_progress/")
+def save_test_progress(progress: TestProgress):
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Проверяем, есть ли уже прогресс для этого пользователя
+    cursor.execute("SELECT id FROM test_progress WHERE telegram_id=%s", (progress.telegram_id,))
+    row = cursor.fetchone()
+    if row:
+        # Обновляем
+        cursor.execute(
+            """
+            UPDATE test_progress SET current_scene=%s, all_scenes=%s, profile_scores=%s, profession_scores=%s, lang=%s, updated_at=NOW()
+            WHERE telegram_id=%s
+            """,
+            (
+                progress.current_scene,
+                progress.all_scenes,
+                progress.profile_scores,
+                progress.profession_scores,
+                progress.lang,
+                progress.telegram_id
+            )
+        )
+    else:
+        # Вставляем
+        cursor.execute(
+            """
+            INSERT INTO test_progress (telegram_id, current_scene, all_scenes, profile_scores, profession_scores, lang, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            """,
+            (
+                progress.telegram_id,
+                progress.current_scene,
+                progress.all_scenes,
+                progress.profile_scores,
+                progress.profession_scores,
+                progress.lang
+            )
+        )
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"status": "ok"}
+
+@app.get("/test_progress/")
+def get_test_progress(telegram_id: int = Query(...)):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM test_progress WHERE telegram_id=%s", (telegram_id,))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if row:
+        return row
+    return {}
+
+@app.delete("/test_progress/")
+def delete_test_progress(telegram_id: int = Query(...)):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM test_progress WHERE telegram_id=%s", (telegram_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"status": "deleted"}
