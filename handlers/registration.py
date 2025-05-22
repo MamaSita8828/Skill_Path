@@ -6,6 +6,7 @@ import aiohttp
 from handlers.test_utils import start_test_flow
 from utils.messages import get_message, normalize_lang, get_user_lang, BUTTONS
 from utils.keyboards import get_main_keyboard
+from database import UserManager
 
 router = Router()
 
@@ -138,20 +139,25 @@ async def reg_city(message: Message, state: FSMContext):
     await state.update_data(city=message.text.strip(), user_lang=lang)
     data = await state.get_data()
     data['telegram_id'] = message.from_user.id
-    # Отправляем данные на API
-    async with aiohttp.ClientSession() as session:
-        async with session.post(API_URL, json=data) as resp:
-            if resp.status == 200:
-                msg = get_message("registration_done", lang)
-                if not msg:
-                    msg = get_message("registration_done", "ru")
-                await message.answer(msg, reply_markup=None)
-                await start_test_flow(message, state)
-            else:
-                msg = get_message("registration_error", lang)
-                if not msg:
-                    msg = get_message("registration_error", "ru")
-                await message.answer(msg, reply_markup=None)
+    # Сохраняем пользователя в БД
+    success = await UserManager.create_user(
+        telegram_id=message.from_user.id,
+        fio=data.get('fio', ''),
+        school=data.get('school', ''),
+        class_number=data.get('class_number', None),
+        class_letter=data.get('class_letter', ''),
+        gender=data.get('gender', ''),
+        birth_year=data.get('birth_year', None),
+        city=data.get('city', ''),
+        language=lang
+    )
+    if success:
+        msg = get_message("registration_done", lang) or get_message("registration_done", "ru")
+        await message.answer(msg, reply_markup=None)
+        await start_test_flow(message, state)
+    else:
+        msg = get_message("registration_error", lang) or get_message("registration_error", "ru")
+        await message.answer(msg, reply_markup=None)
     await state.clear()
 
 def register_registration_handlers(dispatcher):

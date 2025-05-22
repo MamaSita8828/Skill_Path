@@ -8,6 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 # Импорт обработчиков
 from handlers import commands, callbacks, messages, goals, materials, test, registration
 from config import settings
+from database import db, UserManager, TestProgressManager, TestResultsManager
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -47,6 +48,9 @@ async def on_shutdown():
 
 
 async def main():
+    # Подключение к базе данных
+    await db.connect()
+
     # Регистрация обработчиков
     register_handlers(dp)
 
@@ -56,6 +60,9 @@ async def main():
 
     # Запуск бота
     await dp.start_polling(bot)
+
+    # Закрытие соединения с БД после завершения работы бота
+    await db.close()
 
 
 if __name__ == '__main__':

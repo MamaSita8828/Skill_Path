@@ -7,6 +7,7 @@ from utils.states import GoalStates
 from utils.messages import format_goal, format_progress, get_message, get_user_lang
 from utils.keyboards import get_goals_keyboard
 from utils.error_handler import handle_errors
+from database import GoalManager
 
 router = Router()
 
@@ -99,7 +100,13 @@ async def process_goal_confirmation(message: Message, state: FSMContext):
     if message.text.lower() in ['да', 'yes', 'y', 'ооба']:
         data = await state.get_data()
         # Сохраняем цель в базу данных
-        # goal_id = db.add_goal(message.from_user.id, data)
+        await GoalManager.add_goal(
+            telegram_id=message.from_user.id,
+            title=data['title'],
+            description=data['description'],
+            deadline=data['deadline'],
+            priority=data['priority']
+        )
         await message.answer(get_message("goal_created", lang), reply_markup=get_goals_keyboard(lang))
     else:
         await message.answer(get_message("goal_cancelled", lang), reply_markup=get_goals_keyboard(lang))
@@ -110,14 +117,12 @@ async def process_goal_confirmation(message: Message, state: FSMContext):
 async def show_goals_list(callback: CallbackQuery):
     """Показать список целей."""
     lang = await get_user_lang(callback.from_user.id)
-    # goals = db.get_user_goals(callback.from_user.id)
-    
+    goals = await GoalManager.get_user_goals(callback.from_user.id)
     if not goals:
         await callback.message.answer(get_message("goal_none", lang))
     else:
         for goal in goals:
             await callback.message.answer(format_goal(goal, lang))
-    
     await callback.answer()
 
 @router.callback_query(F.data == "goals_stats")
@@ -125,7 +130,7 @@ async def show_goals_list(callback: CallbackQuery):
 async def show_goals_stats(callback: CallbackQuery):
     """Показать статистику по целям."""
     lang = await get_user_lang(callback.from_user.id)
-    # stats = db.get_goal_stats(callback.from_user.id)
+    stats = await GoalManager.get_goal_stats(callback.from_user.id)
     await callback.message.answer(format_progress(stats, lang))
     await callback.answer()
 
