@@ -12,7 +12,7 @@ from utils.keyboards import (
 from utils.messages import get_message, get_user_lang, format_test_stats
 from utils.states import GoalStates, MaterialStates, NoteStates, ProfileStates, SettingsStates
 from utils.error_handler import handle_errors
-import aiohttp
+from database import UserManager, TestResultsManager
 
 router = Router()
 
@@ -138,10 +138,7 @@ async def cmd_cancel(message: Message, state: FSMContext):
 async def show_stats(message: Message):
     user_id = message.from_user.id
     lang = await get_user_lang(user_id)
-    API_URL = "http://localhost:8000/test_results/"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_URL}?telegram_id={user_id}") as resp:
-            results = await resp.json()
+    results = await TestResultsManager.get_user_results(user_id)
     if not results:
         await message.answer(get_message("stats_none", lang))
         return
@@ -170,23 +167,16 @@ async def change_language_menu(message: Message, state: FSMContext):
 async def show_profile(message: Message):
     user_id = message.from_user.id
     lang = await get_user_lang(user_id)
-    # --- Получаем данные из API ---
-    API_USER = "http://localhost:8000/users/"
-    API_RESULTS = "http://localhost:8000/test_results/"
-    user_api = {}
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{API_USER}?telegram_id={user_id}") as resp:
-                if resp.status == 200:
-                    user_api = await resp.json()
-    except Exception as e:
-        print(f"[DEBUG] Ошибка получения профиля из API: {e}")
+    user = await UserManager.get_user(user_id)
+    if not user:
+        await message.answer("Профиль не найден. Пожалуйста, пройдите регистрацию.")
+        return
     # --- Получаем данные из локальной базы ---
     # db_data = db._read_db()
     # user_local = db_data.get('users', {}).get(str(user_id), {})
     # --- Объединяем данные: приоритет — API ---
     def get_field(field, default="-"):
-        return user_api.get(field) or default
+        return user.get(field) or default
     fio = get_field('fio')
     school = get_field('school')
     class_number = get_field('class_number')
@@ -196,8 +186,8 @@ async def show_profile(message: Message):
     gender = get_field('gender')
     birth_year = get_field('birth_year')
     # --- Прогресс по артефактам ---
-    portals_local = set(user_api.get('portals', []) or [])
-    artifacts_api = set(user_api.get('artifacts', []) or [])
+    portals_local = set(user.get('portals', []) or [])
+    artifacts_api = set(user.get('artifacts', []) or [])
     portals = portals_local.union(artifacts_api)
     from handlers.test import ARTIFACTS_BY_PROFESSION
     total_artifacts = 60 if len(ARTIFACTS_BY_PROFESSION) < 60 else len(ARTIFACTS_BY_PROFESSION)
@@ -210,10 +200,7 @@ async def show_profile(message: Message):
     unique_professions = set()
     results = []
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{API_RESULTS}?telegram_id={user_id}") as resp:
-                if resp.status == 200:
-                    results = await resp.json()
+        results = await TestResultsManager.get_user_results(user_id)
     except Exception as e:
         print(f"[DEBUG] Ошибка получения тестов из API: {e}")
     for r in results:

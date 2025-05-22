@@ -3,20 +3,15 @@ from utils.states import TestStates
 from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from utils.messages import get_user_lang, normalize_lang
-import aiohttp
+from database import UserManager
 
-async def get_user_data_from_api(telegram_id: int):
-    API_URL = "http://localhost:8000/users/"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_URL}?telegram_id={telegram_id}") as resp:
-            if resp.status == 200:
-                return await resp.json()
-            return None
+async def get_user_data_from_db(telegram_id: int):
+    return await UserManager.get_user(telegram_id)
 
 async def start_test_flow(message: Message, state: FSMContext):
     await state.clear()
     # Получаем язык и пол пользователя
-    user_data = await get_user_data_from_api(message.from_user.id)
+    user_data = await get_user_data_from_db(message.from_user.id)
     lang = normalize_lang(user_data.get("language", "ru")) if user_data else "ru"
     gender = user_data.get("gender", "male") if user_data else "male"
     scene_manager = SceneManager(language=lang, gender=gender)
