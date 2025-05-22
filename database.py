@@ -15,18 +15,22 @@ class Database:
         
     async def connect(self):
         """Создание пула соединений с базой данных"""
-        self.pool = await aiomysql.create_pool(
-            host=os.getenv('MYSQL_HOST', 'turntable.proxy.rlwy.net'),
-            port=int(os.getenv('MYSQL_PORT', 11725)),
-            user=os.getenv('MYSQL_USER', 'root'),
-            password=os.getenv('MYSQL_PASSWORD', 'obyRyMEAMtDgJsSxGkontTXPZzwJdtFR'),
-            db=os.getenv('MYSQL_DB', 'railway'),
-            charset='utf8mb4',
-            autocommit=True,
-            maxsize=10,
-            minsize=1
-        )
-        print("✅ Подключение к базе данных установлено")
+        try:
+            self.pool = await aiomysql.create_pool(
+                host=os.getenv('MYSQL_HOST'),
+                port=int(os.getenv('MYSQL_PORT')),
+                user=os.getenv('MYSQL_USER'),
+                password=os.getenv('MYSQL_PASSWORD'),
+                db=os.getenv('MYSQL_DB'),
+                charset='utf8mb4',
+                autocommit=True,
+                maxsize=10,
+                minsize=1
+            )
+            print("✅ Подключение к базе данных установлено")
+        except Exception as e:
+            print(f"❌ Ошибка подключения к БД: {e}")
+            raise
     
     async def close(self):
         """Закрытие пула соединений"""
