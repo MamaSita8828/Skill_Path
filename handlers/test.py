@@ -560,6 +560,7 @@ async def handle_scene_callback(callback: CallbackQuery, state: FSMContext):
         await show_test_result(callback, state)
 
 async def show_test_result(message_or_callback, state: FSMContext, all_collected=False):
+    print("[DEBUG] show_test_result вызван")
     data = await state.get_data()
     profile_scores = data.get('profile_scores', {})
     profession_scores = data.get('profession_scores', {})
@@ -736,6 +737,7 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
             for i in range(0, len(text), MAX_LEN):
                 await message_or_callback.message.edit_text(text[i:i+MAX_LEN], reply_markup=keyboard if i == 0 else None, parse_mode="HTML")
         except Exception as e:
+            print(f"[DEBUG] Ошибка при отправке результата: {e}")
             if "message is not modified" in str(e):
                 pass  # Просто игнорируем эту ошибку
             else:
@@ -760,9 +762,9 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
         await TestResultsManager.add_test_result(test_result)
     except Exception as e:
         print(f"[ERROR] Не удалось сохранить результат теста: {e}")
-
     # --- УДАЛЯЕМ ПРОГРЕСС ---
     await TestProgressManager.delete_progress(user_id)
+    print("[DEBUG] show_test_result завершён")
 
 @router.callback_query(F.data == "restart_test")
 async def restart_test_callback(callback: CallbackQuery, state: FSMContext):
