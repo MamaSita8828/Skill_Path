@@ -338,13 +338,22 @@ async def start_test(message: Message, state: FSMContext):
         return
     # --- ПРОВЕРКА ПРОГРЕССА ---
     progress = await TestProgressManager.get_progress(message.from_user.id)
-    if progress:
+    # Проверяем, что прогресс валидный: не персональные сцены и не завершён
+    valid_progress = False
+    if progress and progress.get("all_scenes") and progress.get("scene_index", 0) < len(progress["all_scenes"]):
+        all_scenes = progress["all_scenes"]
+        # Проверяем, что это именно базовые сцены (например, по id первой сцены)
+        if all_scenes and all_scenes[0].get("id", 0) == 1:
+            valid_progress = True
+    if valid_progress:
         await state.update_data(**progress)
         all_scenes = progress["all_scenes"]
         scene_index = progress["scene_index"]
         from handlers.test import send_scene
         await send_scene(message, all_scenes[scene_index], state=state)
         return
+    # Если прогресс невалидный или завершён — очищаем и стартуем заново
+    await TestProgressManager.delete_progress(message.from_user.id)
     from handlers.test_utils import start_test_flow
     await start_test_flow(message, state)
 
