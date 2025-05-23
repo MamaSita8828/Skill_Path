@@ -2,7 +2,6 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 import json
-import aiohttp
 
 from utils.error_handler import handle_errors
 from utils.messages import get_message, normalize_lang, get_user_lang

@@ -2,11 +2,10 @@ from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from utils.states import RegistrationStates
-import aiohttp
-from handlers.test_utils import start_test_flow
 from utils.messages import get_message, normalize_lang, get_user_lang, BUTTONS
 from utils.keyboards import get_main_keyboard
 from database import UserManager
+from handlers.test_utils import start_test_flow
 
 router = Router()
 
@@ -21,8 +20,6 @@ GENDER_KB = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="Мальчик"), KeyboardButton(text="Девочка")]],
     resize_keyboard=True
 )
-
-API_URL = "http://localhost:8000/users/"
 
 # Старт регистрации (например, по команде /register)
 @router.message(F.text == "/register")

@@ -147,8 +147,18 @@ async def show_stats(message: Message):
 
 @router.message(F.text.in_(["🗝️ Коллекция артефактов", "🗝️ Артефакттар коллекциясы"]))
 async def show_artifact_collection(message: Message):
-    from handlers.test import show_artifact_collection
-    await show_artifact_collection(message)
+    user_id = message.from_user.id
+    user = await UserManager.get_user(user_id)
+    user_artifacts = set(user.get('artifacts', []) or [])
+    lang = await get_user_lang(user_id)
+    # ... (логика вывода коллекции артефактов)
+
+@router.message(F.text.in_(["🗝️ Порталы", "🗝️ Порталдар"]))
+async def show_portals(message: Message):
+    user_id = message.from_user.id
+    user = await UserManager.get_user(user_id)
+    opened_profiles = user.get('opened_profiles', []) or []
+    # ... (логика вывода порталов)
 
 @router.message(F.text.in_(["🌍 Сменить язык", "🌍 Тилди өзгөртүү"]))
 @handle_errors

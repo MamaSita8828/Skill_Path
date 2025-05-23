@@ -4,7 +4,6 @@ from aiogram.types import Message
 from utils.error_handler import handle_errors
 from utils.messages import get_message, normalize_lang, get_user_lang
 from utils.keyboards import get_main_keyboard
-import aiohttp
 
 router = Router()
 
