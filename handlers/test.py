@@ -6,7 +6,7 @@ from utils.states import TestStates, RegistrationStates
 from utils.scene_manager import scene_manager, SceneManager
 from aiogram.filters import Command
 from utils.messages import get_message, normalize_lang, get_user_lang, ARTIFACTS_BY_PROFESSION
-from handlers.test_utils import start_test_flow
+from handlers.test_utils import start_test_flow, send_scene
 import json
 from datetime import datetime
 import random
@@ -16,6 +16,10 @@ import asyncio
 import re
 from database import UserManager, TestProgressManager, TestResultsManager
 from utils.artifacts import ARTIFACTS_BY_PROFESSION
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -349,7 +353,6 @@ async def start_test(message: Message, state: FSMContext):
         await state.update_data(**progress)
         all_scenes = progress["all_scenes"]
         scene_index = progress["scene_index"]
-        from handlers.test import send_scene
         await send_scene(message, all_scenes[scene_index], state=state)
         return
     # Если прогресс невалидный или завершён — очищаем и стартуем заново
@@ -443,125 +446,129 @@ async def send_scene(message_or_callback, scene, scene_type='main', state=None, 
 @router.callback_query(F.data.regexp(r'^(main|personal):'))
 async def handle_scene_callback(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    all_scenes = data.get('all_scenes', [])
     scene_index = data.get('scene_index', 0)
-    print(f"[DEBUG] handle_scene_callback: scene_type={callback.data.split(':', 1)[0]}, scene_index={scene_index}, len(all_scenes)={len(all_scenes)}")
-    if not all_scenes:
-        lang = data.get('lang', 'ru')
-        await callback.message.answer(
-            "Похоже, тест был прерван или вы сменили устройство/язык. Пожалуйста, начните тест заново командой /test."
-            if lang == 'ru' else
-            "Кыязы, тест үзгүлтүккө учурады же сиз түзмөк/тилди алмаштырдыңыз. Сураныч, тестти кайрадан /test буйругу менен баштаңыз."
-        )
-        await state.clear()
-        return
-    profile_scores = data.get('profile_scores', {})
-    profession_scores = data.get('profession_scores', {})
-    lang = data.get('lang', 'ru')
-    gender = data.get('gender', 'male')
-    scene_type, scene_id, option_id = callback.data.split(":", 2)
-    scene_id = int(scene_id)
-    scene = next((s for s in all_scenes if s['id'] == scene_id), None)
-    if not scene:
-        await callback.message.answer("Ошибка: сцена не найдена." if lang == 'ru' else "Ката: сцена табылган жок.")
-        return
-    selected_option = next((opt for opt in scene.get('options', []) if str(opt['id']) == option_id), None)
-    if not selected_option:
-        await callback.message.answer("Ошибка: опция не найдена." if lang == 'ru' else "Ката: опция табылган жок.")
-        return
-    
-    # --- Показываем feedback только через alert ---
-    feedback_text = selected_option.get('feedback')
-    def genderize(text):
-        if gender == 'female':
-            return text.replace('{gender:male|ся|ась}', 'ась').replace('{gender:male||а}', 'а').replace('{gender:male||на}', 'на')
-        else:
-            return text.replace('{gender:male|ся|ась}', 'ся').replace('{gender:male||а}', '').replace('{gender:male||на}', '')
-    feedback_text = genderize(feedback_text) if feedback_text else ''
-    if feedback_text:
-        await callback.answer(feedback_text, show_alert=True)
-    
-    # --- Накопление баллов по профилям (первые 6 сцен) ---
-    if scene_type == 'main' and 'profile' in selected_option:
-        profiles = selected_option['profile']
-        if isinstance(profiles, list):
-            for profile in profiles:
-                name = profile.get('name') if isinstance(profile, dict) else profile
-                profile_scores[name] = profile_scores.get(name, 0) + 1
-        else:
-            name = profiles.get('name') if isinstance(profiles, dict) else profiles
-            profile_scores[name] = profile_scores.get(name, 0) + 1
-    
-    # --- После 6-й сцены сразу запускаем персональные сцены ---
-    if scene_type == 'main' and scene_index == 5:
-        if profile_scores:
-            top_profile = max(profile_scores.items(), key=lambda x: x[1])[0]
-        else:
-            top_profile = None
-        PROFILE_TO_PROFILE_NAME = {
-            'Техническая': 'Техническая',
-            'Техникалык': 'Техническая',
-            'Гуманитарная': 'Гуманитарная',
-            'Гуманитардык': 'Гуманитарная',
-            'Естественно-научная': 'Естественно-научная',
-            'Табигый-илимий': 'Естественно-научная',
-            'Социально-экономическая': 'Социально-экономическая',
-            'Социалдык-экономикалык': 'Социально-экономическая',
-            'Творческо-художественная': 'Творческо-художественная',
-            'Чыгармачыл-көркөм': 'Творческо-художественная',
-            'Прикладно-технологическая': 'Прикладно-технологическая',
-            'Колдонмо-технологиялык': 'Прикладно-технологиялык',
-        }
-        profile_name = PROFILE_TO_PROFILE_NAME.get(top_profile)
-        sm = SceneManager(language=lang, gender=gender)
-        personal_scenes = sm.get_personal_scenes_by_branch(profile_name)
-        if not personal_scenes:
-            await callback.message.answer("Нет персональных сцен для этого профиля. Попробуйте выбрать другой." if lang == 'ru' else "Бул профиль үчүн жеке сценалар жок. Башка профилди тандап көрүңүз.")
+    try:
+        all_scenes = data.get('all_scenes', [])
+        if not all_scenes:
+            await callback.message.answer("Тест был прерван. Начните заново.")
+            await state.clear()
             return
-        await state.update_data(
-            all_scenes=personal_scenes,
-            scene_index=0,
-            branch=profile_name,
-            profile_scores=profile_scores,
-            profession_scores=profession_scores
-        )
-        await send_scene(callback, personal_scenes[0], scene_type='personal', state=state)
-        return
-    
-    # --- В персональных сценах считаем баллы по всем profiles (по name) ---
-    if scene_type == 'personal' and 'profiles' in selected_option:
-        for prof in selected_option['profiles']:
-            prof_name = prof.get('name')
-            if prof_name:
-                profession_scores[prof_name] = profession_scores.get(prof_name, 0) + prof.get('weight', 1)
-    
-    # --- Если персональные сцены закончились — выводим результат ---
-    if scene_type == 'personal' and (scene_index+1 >= len(all_scenes)):
-        print(f"[DEBUG] Завершение персональных сцен: scene_index={scene_index}, len(all_scenes)={len(all_scenes)}")
-        await show_test_result(callback, state)
-        return
-    
-    # --- Переход к следующей сцене ---
-    if scene_index+1 < len(all_scenes):
-        await state.update_data(scene_index=scene_index+1, profile_scores=profile_scores, profession_scores=profession_scores)
-        next_scene = all_scenes[scene_index+1]
-        await send_scene(callback, next_scene, scene_type=scene_type, state=state)
-        # --- СОХРАНЯЕМ ПРОГРЕСС ---
-        await TestProgressManager.save_progress(
-            callback.from_user.id,
-            scene_index+1,
-            all_scenes,
-            profile_scores,
-            profession_scores,
-            lang
-        )
-    else:
-        # Если вдруг вышли за пределы массива, явно вызываем show_test_result
-        print(f"[DEBUG] Индекс вне диапазона: scene_index={scene_index}, len(all_scenes)={len(all_scenes)}")
-        await show_test_result(callback, state)
+        profile_scores = data.get('profile_scores', {})
+        profession_scores = data.get('profession_scores', {})
+        lang = data.get('lang', 'ru')
+        gender = data.get('gender', 'male')
+        scene_type, scene_id, option_id = callback.data.split(":", 2)
+        scene_id = int(scene_id)
+        scene = next((s for s in all_scenes if s['id'] == scene_id), None)
+        if not scene:
+            await callback.message.answer("Ошибка: сцена не найдена." if lang == 'ru' else "Ката: сцена табылган жок.")
+            return
+        selected_option = next((opt for opt in scene.get('options', []) if str(opt['id']) == option_id), None)
+        if not selected_option:
+            await callback.message.answer("Ошибка: опция не найдена." if lang == 'ru' else "Ката: опция табылган жок.")
+            return
+        
+        # --- Показываем feedback только через alert ---
+        feedback_text = selected_option.get('feedback')
+        def genderize(text):
+            if gender == 'female':
+                return text.replace('{gender:male|ся|ась}', 'ась').replace('{gender:male||а}', 'а').replace('{gender:male||на}', 'на')
+            else:
+                return text.replace('{gender:male|ся|ась}', 'ся').replace('{gender:male||а}', '').replace('{gender:male||на}', '')
+        feedback_text = genderize(feedback_text) if feedback_text else ''
+        if feedback_text:
+            await callback.answer(feedback_text, show_alert=True)
+        
+        # --- Накопление баллов по профилям (первые 6 сцен) ---
+        if scene_type == 'main' and 'profile' in selected_option:
+            profiles = selected_option['profile']
+            if isinstance(profiles, list):
+                for profile in profiles:
+                    name = profile.get('name') if isinstance(profile, dict) else profile
+                    profile_scores[name] = profile_scores.get(name, 0) + 1
+            else:
+                name = profiles.get('name') if isinstance(profiles, dict) else profiles
+                profile_scores[name] = profile_scores.get(name, 0) + 1
+        
+        # --- После 6-й сцены сразу запускаем персональные сцены ---
+        if scene_type == 'main' and scene_id == 5:
+            if profile_scores:
+                max_score = max(profile_scores.values())
+                top_profiles = [k for k, v in profile_scores.items() if v == max_score]
+                top_profile = random.choice(top_profiles)  # выбираем одно направление случайно из топовых
+            else:
+                top_profile = None
+            # --- Исправленный словарь для перевода профиля на русский ---
+            PROFILE_TO_PROFILE_NAME = {
+                'Техническая': 'Техническая',
+                'Техникалык': 'Техническая',
+                'Гуманитарная': 'Гуманитарная',
+                'Гуманитардык': 'Гуманитарная',
+                'Естественно-научная': 'Естественно-научная',
+                'Жаратылыш таануу': 'Естественно-научная',
+                'Социально-экономическая': 'Социально-экономическая',
+                'Социалдык-экономикалык': 'Социально-экономическая',
+                'Творческо-художественная': 'Творческо-художественная',
+                'Чыгармачыл-көркөм': 'Творческо-художественная',
+                'Прикладно-технологическая': 'Прикладно-технологиялык',
+                'Колдонмо-технологиялык': 'Прикладно-технологиялык',
+            }
+            profile_name = PROFILE_TO_PROFILE_NAME.get(top_profile)
+            logger.info(f"[DEBUG] top_profile={top_profile}, profile_name={profile_name}")
+            sm = SceneManager(language=lang, gender=gender)
+            personal_scenes = sm.get_personal_scenes_by_branch(profile_name)
+            logger.info(f"[DEBUG] personal_scenes count: {len(personal_scenes)}")
+            if not personal_scenes:
+                await callback.message.answer("Нет персональных сцен для этого профиля. Попробуйте выбрать другой." if lang == 'ru' else "Бул профиль үчүн жеке сценалар жок. Башка профилди тандап көрүңүз.")
+                return
+            await state.update_data(
+                all_scenes=personal_scenes,
+                scene_index=0,
+                branch=profile_name,
+                profile_scores=profile_scores,
+                profession_scores=profession_scores
+            )
+            await send_scene(callback, personal_scenes[0], scene_type='personal', state=state)
+            return
+        
+        # --- В персональных сценах считаем баллы по всем profiles (по name) ---
+        if scene_type == 'personal' and 'profiles' in selected_option:
+            for prof in selected_option['profiles']:
+                prof_name = prof.get('name')
+                if prof_name:
+                    profession_scores[prof_name] = profession_scores.get(prof_name, 0) + prof.get('weight', 1)
+        
+        # --- Если персональные сцены закончились — выводим результат ---
+        if scene_type == 'personal' and (scene_index+1 >= len(all_scenes)):
+            logger.info(f"[DEBUG] Завершение персональных сцен: scene_index={scene_index}, len(all_scenes)={len(all_scenes)}")
+            await show_test_result(callback, state)
+            return
+        
+        # --- Переход к следующей сцене ---
+        if scene_index+1 < len(all_scenes):
+            await state.update_data(scene_index=scene_index+1, profile_scores=profile_scores, profession_scores=profession_scores)
+            next_scene = all_scenes[scene_index+1]
+            await send_scene(callback, next_scene, scene_type=scene_type, state=state)
+            # --- СОХРАНЯЕМ ПРОГРЕСС ---
+            await TestProgressManager.save_progress(
+                callback.from_user.id,
+                scene_index+1,
+                all_scenes,
+                profile_scores,
+                profession_scores,
+                lang
+            )
+        else:
+            # Если вдруг вышли за пределы массива, явно вызываем show_test_result
+            logger.info(f"[DEBUG] Индекс вне диапазона: scene_index={scene_index}, len(all_scenes)={len(all_scenes)}")
+            await show_test_result(callback, state)
+    except Exception as e:
+        logger.error(f"Ошибка в handle_scene_callback: {e}")
+        await state.clear()
+        await callback.message.answer("Произошла ошибка. Попробуйте начать тест заново.")
 
 async def show_test_result(message_or_callback, state: FSMContext, all_collected=False):
-    print("[DEBUG] show_test_result вызван")
+    logger.info("[DEBUG] show_test_result вызван")
     data = await state.get_data()
     profile_scores = data.get('profile_scores', {})
     profession_scores = data.get('profession_scores', {})
@@ -623,15 +630,14 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
     prof_keys = set(ARTIFACTS_BY_PROFESSION.keys())
     prof_scores = {k: v for k, v in profession_scores.items() if k in prof_keys}
     
-    # --- Определяем топ-1 профессию (или случайно из топовых) ---
-    top_profession = None
-    max_score = 0
+    # --- Определяем топ-3 профессии ---
+    top_professions = []
     if prof_scores:
-        max_score = max(prof_scores.values())
-        top_professions = [k for k, v in prof_scores.items() if v == max_score]
-        top_profession = random.choice(top_professions)
+        top_professions = sorted(prof_scores.items(), key=lambda x: x[1], reverse=True)[:3]
     
-    # --- Получаем артефакт по профессии и языку ---
+    # --- Получаем артефакт по топ-1 профессии (если есть) ---
+    top_profession = top_professions[0][0] if top_professions else None
+    max_score = top_professions[0][1] if top_professions else 0
     artifact = None
     if top_profession in ARTIFACTS_BY_PROFESSION:
         artifact = ARTIFACTS_BY_PROFESSION[top_profession].get(artifact_lang) or ARTIFACTS_BY_PROFESSION[top_profession].get('ru')
@@ -663,7 +669,7 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
             if new_artifact:
                 await message_or_callback.answer(f"🎉 Ты получил новый артефакт: <b>{artifact_key}</b>!" if lang == 'ru' else f"🎉 Сен жаңы артефакт алдың: <b>{artifact_key}</b>!", parse_mode="HTML")
         except Exception as e:
-            print(f"[ERROR] Не удалось сохранить артефакт: {e}")
+            logger.error(f"[ERROR] Не удалось сохранить артефакт: {e}")
             await message_or_callback.answer("⚠️ Произошла ошибка при сохранении артефакта. Попробуйте позже." if lang == 'ru' else "⚠️ Артефакты сактоодо ката кетти. Кийинчерээк аракет кылып көрүңүз.")
     else:
         await message_or_callback.answer("❗️ Артефакт не определён. Попробуйте пройти тест ещё раз или выберите другой путь." if lang == 'ru' else "❗️ Артефакт аныкталган жок. Тестти кайра өтүп көрүңүз же башка жолду тандаңыз.")
@@ -693,7 +699,6 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
     if not profession_scores:
         lines.append(no_profession_phrases[artifact_lang])
     else:
-        top_professions = sorted(profession_scores.items(), key=lambda x: x[1], reverse=True)[:3]
         lines.append(top_professions_title[artifact_lang])
         for name, score in top_professions:
             display_name = PROFILE_TRANSLATIONS[artifact_lang].get(name, name)
@@ -738,7 +743,7 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
             for i in range(0, len(text), MAX_LEN):
                 await message_or_callback.message.edit_text(text[i:i+MAX_LEN], reply_markup=keyboard if i == 0 else None, parse_mode="HTML")
         except Exception as e:
-            print(f"[DEBUG] Ошибка при отправке результата: {e}")
+            logger.error(f"[DEBUG] Ошибка при отправке результата: {e}")
             if "message is not modified" in str(e):
                 pass  # Просто игнорируем эту ошибку
             else:
@@ -762,10 +767,10 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
         }
         await TestResultsManager.add_test_result(test_result)
     except Exception as e:
-        print(f"[ERROR] Не удалось сохранить результат теста: {e}")
+        logger.error(f"[ERROR] Не удалось сохранить результат теста: {e}")
     # --- УДАЛЯЕМ ПРОГРЕСС ---
     await TestProgressManager.delete_progress(user_id)
-    print("[DEBUG] show_test_result завершён")
+    logger.info("[DEBUG] show_test_result завершён")
 
 @router.callback_query(F.data == "restart_test")
 async def restart_test_callback(callback: CallbackQuery, state: FSMContext):
@@ -929,7 +934,7 @@ async def show_portals(message: Message):
     if changed:
         user.opened_profiles = corrected_profiles
         await UserManager.update_user(user_id, opened_profiles=user.opened_profiles)
-        print(f"[DEBUG] Исправлены opened_profiles: {corrected_profiles}")
+        logger.info(f"[DEBUG] Исправлены opened_profiles: {corrected_profiles}")
     opened_profiles = corrected_profiles
     lang = await get_user_lang(user_id)
     artifact_lang = lang
@@ -953,7 +958,7 @@ async def start_personal_portal(callback: CallbackQuery, state: FSMContext):
     # --- Автокоррекция: если вдруг profile_name на кыргызском, переводим на русский ---
     if profile_name in KY_TO_RU_PROFILE:
         profile_name = KY_TO_RU_PROFILE[profile_name]
-        print(f"[DEBUG] Исправлен profile_name на русский: {profile_name}")
+        logger.info(f"[DEBUG] Исправлен profile_name на русский: {profile_name}")
     lang = await get_user_lang(callback.from_user.id)
     artifact_lang = lang
     gender = 'male'  # Можно доработать получение пола из user_data

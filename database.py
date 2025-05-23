@@ -5,9 +5,44 @@ from datetime import datetime
 from typing import Optional, Dict, List
 import os
 from dotenv import load_dotenv
+import re
+import logging
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Загружаем переменные окружения
 load_dotenv()
+
+# --- ДОБАВЛЕНО: парсер DATABASE_URL для Railway ---
+def parse_database_url(url):
+    # Пример: mysql://user:pass@host:port/dbname
+    regex = r"mysql:\/\/(.*?):(.*?)@(.*?):(\d+)\/(.*)"
+    match = re.match(regex, url)
+    if not match:
+        raise ValueError("DATABASE_URL не соответствует формату mysql://user:pass@host:port/dbname")
+    user, password, host, port, db = match.groups()
+    return {
+        "user": user,
+        "password": password,
+        "host": host,
+        "port": int(port),
+        "db": db
+    }
+
+# --- Получаем параметры подключения ---
+db_url = os.getenv("DATABASE_URL")
+if db_url:
+    db_params = parse_database_url(db_url)
+else:
+    db_params = {
+        "user": os.getenv("MYSQL_USER"),
+        "password": os.getenv("MYSQL_PASSWORD"),
+        "host": os.getenv("MYSQL_HOST"),
+        "port": int(os.getenv("MYSQL_PORT", 3306)),
+        "db": os.getenv("MYSQL_DB")
+    }
 
 class Database:
     def __init__(self):
@@ -17,19 +52,19 @@ class Database:
         """Создание пула соединений с базой данных"""
         try:
             self.pool = await aiomysql.create_pool(
-                host=os.getenv('MYSQL_HOST'),
-                port=int(os.getenv('MYSQL_PORT')),
-                user=os.getenv('MYSQL_USER'),
-                password=os.getenv('MYSQL_PASSWORD'),
-                db=os.getenv('MYSQL_DB'),
+                host=db_params["host"],
+                port=db_params["port"],
+                user=db_params["user"],
+                password=db_params["password"],
+                db=db_params["db"],
                 charset='utf8mb4',
                 autocommit=True,
                 maxsize=10,
                 minsize=1
             )
-            print("✅ Подключение к базе данных установлено")
+            logger.info("✅ Подключение к базе данных установлено")
         except Exception as e:
-            print(f"❌ Ошибка подключения к БД: {e}")
+            logger.error(f"❌ Ошибка подключения к БД: {e}")
             raise
     
     async def close(self):
@@ -90,10 +125,10 @@ class UserManager:
         
         try:
             await db.execute_query(query, params)
-            print(f"✅ Пользователь {telegram_id} создан")
+            logger.info(f"✅ Пользователь {telegram_id} создан")
             return True
         except Exception as e:
-            print(f"❌ Ошибка создания пользователя: {e}")
+            logger.error(f"❌ Ошибка создания пользователя: {e}")
             return False
     
     @staticmethod
@@ -125,7 +160,7 @@ class UserManager:
             rows_affected = await db.execute_query(query, tuple(params))
             return rows_affected > 0
         except Exception as e:
-            print(f"❌ Ошибка обновления пользователя: {e}")
+            logger.error(f"❌ Ошибка обновления пользователя: {e}")
             return False
 
 class TestProgressManager:
@@ -173,7 +208,7 @@ class TestProgressManager:
             await db.execute_query(query, params)
             return True
         except Exception as e:
-            print(f"❌ Ошибка сохранения прогресса: {e}")
+            logger.error(f"❌ Ошибка сохранения прогресса: {e}")
             return False
     
     @staticmethod
@@ -189,7 +224,7 @@ class TestProgressManager:
                 progress['profile_scores'] = json.loads(progress['profile_scores'] or '{}')
                 progress['profession_scores'] = json.loads(progress['profession_scores'] or '{}')
             except json.JSONDecodeError:
-                print(f"❌ Ошибка парсинга JSON для пользователя {telegram_id}")
+                logger.error(f"❌ Ошибка парсинга JSON для пользователя {telegram_id}")
         
         return progress
     
@@ -201,7 +236,7 @@ class TestProgressManager:
             rows_affected = await db.execute_query(query, (telegram_id,))
             return rows_affected > 0
         except Exception as e:
-            print(f"❌ Ошибка удаления прогресса: {e}")
+            logger.error(f"❌ Ошибка удаления прогресса: {e}")
             return False
 
 class TestResultsManager:
@@ -221,10 +256,10 @@ class TestResultsManager:
         
         try:
             await db.execute_query(query, params)
-            print(f"✅ Результат сохранен для пользователя {telegram_id}")
+            logger.info(f"✅ Результат сохранен для пользователя {telegram_id}")
             return True
         except Exception as e:
-            print(f"❌ Ошибка сохранения результата: {e}")
+            logger.error(f"❌ Ошибка сохранения результата: {e}")
             return False
     
     @staticmethod
@@ -242,6 +277,7 @@ class TestResultsManager:
             try:
                 result['details'] = json.loads(result['details'] or '{}')
             except json.JSONDecodeError:
+                logger.error(f"❌ Ошибка парсинга JSON в get_user_results для пользователя {telegram_id}")
                 result['details'] = {}
         
         return results
@@ -261,6 +297,7 @@ class TestResultsManager:
             try:
                 result['details'] = json.loads(result['details'] or '{}')
             except json.JSONDecodeError:
+                logger.error(f"❌ Ошибка парсинга JSON в get_latest_result для пользователя {telegram_id}")
                 result['details'] = {}
         
         return result 
@@ -280,7 +317,7 @@ class GoalManager:
             await db.execute_query(query, params)
             return True
         except Exception as e:
-            print(f"❌ Ошибка добавления цели: {e}")
+            logger.error(f"❌ Ошибка добавления цели: {e}")
             return False
 
     @staticmethod
@@ -290,7 +327,7 @@ class GoalManager:
         try:
             return await db.fetch_all(query, (telegram_id,))
         except Exception as e:
-            print(f"❌ Ошибка получения целей: {e}")
+            logger.error(f"❌ Ошибка получения целей: {e}")
             return []
 
     @staticmethod
@@ -309,5 +346,5 @@ class GoalManager:
                 "study_time": 0           # Можно реализовать позже
             }
         except Exception as e:
-            print(f"❌ Ошибка получения статистики целей: {e}")
+            logger.error(f"❌ Ошибка получения статистики целей: {e}")
             return {"active_goals": 0, "completed_goals": 0, "materials_studied": 0, "study_time": 0} 

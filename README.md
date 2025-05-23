@@ -101,3 +101,26 @@ python bot.py
 - `handlers/` — обработчики aiogram
 - `utils/` — утилиты и вспомогательные модули
 - `data/` — данные и сцены 
+
+## Деплой на Railway
+
+1. Загрузите репозиторий на Railway (https://railway.app/)
+2. Укажите переменные окружения:
+   - `BOT_TOKEN` — токен Telegram-бота
+   - `DATABASE_URL` — строка подключения к MySQL (выдаётся Railway автоматически)
+   - (опционально) `DEBUG`, `ADMIN_ID`, `REDIS_HOST` и др.
+3. Убедитесь, что в проекте есть файл `requirements.txt` со всеми зависимостями.
+4. (Опционально) Если нужен кастомный запуск, добавьте Dockerfile:
+
+```dockerfile
+FROM python:3.11
+WORKDIR /app
+COPY . .
+RUN pip install --upgrade pip && pip install -r requirements.txt
+CMD ["python", "bot.py"]
+```
+
+5. Нажмите Deploy. Railway сам создаст базу и подключит переменные.
+6. Логи доступны в разделе Logs Railway.
+
+--- 

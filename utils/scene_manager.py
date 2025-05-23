@@ -5,7 +5,8 @@ from typing import List, Dict, Any
 import random
 import re
 
-SCENES_DIR = Path("data/scenes")
+# Абсолютный путь к папке сцен относительно этого файла
+SCENES_DIR = Path(__file__).parent.parent / "data" / "scenes"
 
 ALLOWED_PROFILES = {
     'Исследователь', 'Аналитик', 'Творец', 'Технарь', 'Коммуникатор', 'Организатор',
@@ -78,10 +79,19 @@ class SceneManager:
         """Загружает список сцен из файла по языку и категории (base_scenes, technical и т.д.)"""
         filename = f"{category}_{self.language}.json"
         path = SCENES_DIR / self.language / filename
+        print(f"[DEBUG] _load_scenes_file: path={path}")
         if not path.exists():
-            raise FileNotFoundError(f"Файл сцен не найден: {path}")
+            print(f"[ERROR] Файл сцен не найден: {path}")
+            # Fallback на русский язык
+            fallback_path = SCENES_DIR / 'ru' / f"{category}_ru.json"
+            if fallback_path.exists():
+                print(f"[INFO] Использую fallback: {fallback_path}")
+                path = fallback_path
+            else:
+                raise FileNotFoundError(f"Файл сцен не найден: {path}")
         with open(path, encoding="utf-8") as f:
             scenes = json.load(f)
+        print(f"[DEBUG] _load_scenes_file: загружено {len(scenes)} сцен из {path}")
         # Обработка гендерных плейсхолдеров
         for scene in scenes:
             scene["description"] = self._replace_gender_placeholders(scene.get("description", ""))
@@ -100,13 +110,15 @@ class SceneManager:
     def get_basic_scenes(self) -> List[Dict[str, Any]]:
         """Возвращает 6 базовых сцен (base_scenes)"""
         scenes = self._load_scenes_file("base_scenes")
+        print(f"[DEBUG] get_basic_scenes: загружено {len(scenes)} сцен")
         return scenes[:6]
 
-    def get_personal_scenes_by_branch(self, branch: str, count: int = 10) -> list[dict]:
+    def get_personal_scenes_by_branch(self, branch: str, count: int = 11) -> list[dict]:
         """
         Загружает персональные сцены для профиля/направления (branch/profile_name) по языку.
         Например: branch='Техническая', язык='ru' -> data/scenes/ru/technical_ru.json
         """
+        print(f"[DEBUG] get_personal_scenes_by_branch: branch={branch}, lang={self.language}")
         lang = self.language
         profile_to_file = {
             'Техническая': f'technical_{lang}.json',
@@ -117,13 +129,16 @@ class SceneManager:
             'Прикладно-технологическая': f'applied_technology_{lang}.json',
         }
         filename = profile_to_file.get(branch)
+        print(f"[DEBUG] profile_to_file.get(branch)={filename}")
         if not filename:
             print(f"[SceneManager] Не найден маппинг для профиля: {branch}")
             return []
         file_path = f"data/scenes/{lang}/{filename}"
+        print(f"[DEBUG] Открываю файл: {file_path}")
         try:
             with open(file_path, encoding="utf-8") as f:
                 scenes = json.load(f)
+            print(f"[DEBUG] Загружено сцен: {len(scenes)} из файла {file_path}")
             return scenes[:count]
         except Exception as e:
             print(f"[SceneManager] Не найден файл ветки: {file_path} ({e})")

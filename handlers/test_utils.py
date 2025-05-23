@@ -36,4 +36,8 @@ async def start_test_flow(message: Message, state: FSMContext):
     # Импортируем send_scene только здесь, чтобы избежать циклических импортов
     from handlers.test import send_scene
     await state.set_state(TestStates.main_scene)
-    await send_scene(message, all_scenes[0], scene_type='main') 
+    await send_scene(message, all_scenes[0], scene_type='main')
+
+async def send_scene(message_or_callback, scene, scene_type='main', state=None, creative_prefix=None, only_option_id=None, extra_buttons=None):
+    # ... реализация из test.py ...
+    pass 

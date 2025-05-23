@@ -1,33 +1,43 @@
 import os
 import json
+from glob import glob
 
-ROOT = os.path.join('data', 'scenes')
-LANGS = ['ru', 'ky']
+SCENES_DIR = os.path.join(os.path.dirname(__file__), '../data/scenes')
 
-def add_progress_to_file(filepath):
+def convert_profile_to_profiles(scene):
+    # Конвертирует старый формат profile -> profiles
+    if 'profile' in scene:
+        scene['profiles'] = [{"name": scene['profile'], "weight": 1}]
+        del scene['profile']
+    # Конвертируем опции
+    for option in scene.get('options', []):
+        if 'profile' in option:
+            option['profiles'] = [{"name": option['profile'], "weight": 1}]
+            del option['profile']
+    return scene
+
+def process_file(filepath):
     with open(filepath, encoding='utf-8') as f:
-        scenes = json.load(f)
-    total = len(scenes)
-    changed = False
-    for i, scene in enumerate(scenes):
-        # Только если нет или отличается
-        if 'progress' not in scene or scene['progress'] != {'current': i+1, 'total': total}:
-            scene['progress'] = {'current': i+1, 'total': total}
-            changed = True
-    if changed:
+        data = json.load(f)
+    # Если это массив сцен
+    if isinstance(data, list):
+        ids = set()
+        for scene in data:
+            # Проверка на дубли id
+            if scene['id'] in ids:
+                print(f"Дублирующийся id {scene['id']} в файле {filepath}")
+            ids.add(scene['id'])
+            convert_profile_to_profiles(scene)
         with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(scenes, f, ensure_ascii=False, indent=2)
-        print(f"[OK] {filepath} — обновлено")
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"Файл {filepath} обработан и сохранён.")
     else:
-        print(f"[SKIP] {filepath} — без изменений")
+        print(f"Пропущен файл (не массив): {filepath}")
 
 def main():
-    for lang in LANGS:
-        dirpath = os.path.join(ROOT, lang)
-        for fname in os.listdir(dirpath):
-            if fname.endswith('.json'):
-                fpath = os.path.join(dirpath, fname)
-                add_progress_to_file(fpath)
+    for lang in ['ru', 'ky']:
+        for file in glob(f"{SCENES_DIR}/{lang}/*.json"):
+            process_file(file)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main() 

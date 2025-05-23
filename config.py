@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
     ADMIN_ID: int = int(os.getenv("ADMIN_ID", 0))
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
     
     # Настройки Redis
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
