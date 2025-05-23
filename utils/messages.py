@@ -1,5 +1,6 @@
 import json
 from database import UserManager
+from utils.artifacts import ARTIFACTS_BY_PROFESSION
 
 MESSAGES = {
     "ru": {
@@ -223,7 +224,7 @@ async def get_user_lang(user_id: int) -> str:
     """Получить язык пользователя из базы по telegram_id. Возвращает 'ru' по умолчанию."""
     user = await UserManager.get_user(user_id)
     if user and user.get("language"):
-        return normalize_lang(user.get("language", "ru"))
+                    return normalize_lang(user.get("language", "ru"))
     return "ru"
 
 def format_test_stats(results, lang="ru"):

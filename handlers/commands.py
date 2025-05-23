@@ -13,6 +13,7 @@ from utils.messages import get_message, get_user_lang, format_test_stats
 from utils.states import GoalStates, MaterialStates, NoteStates, ProfileStates, SettingsStates
 from utils.error_handler import handle_errors
 from database import UserManager, TestResultsManager
+from utils.artifacts import ARTIFACTS_BY_PROFESSION
 
 router = Router()
 
@@ -199,7 +200,6 @@ async def show_profile(message: Message):
     portals_local = set(user.get('portals', []) or [])
     artifacts_api = set(user.get('artifacts', []) or [])
     portals = portals_local.union(artifacts_api)
-    from handlers.test import ARTIFACTS_BY_PROFESSION
     total_artifacts = 60 if len(ARTIFACTS_BY_PROFESSION) < 60 else len(ARTIFACTS_BY_PROFESSION)
     collected = len(portals)
     # Красивый прогресс-бар

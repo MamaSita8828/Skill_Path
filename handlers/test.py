@@ -15,6 +15,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 import asyncio
 import re
 from database import UserManager, TestProgressManager, TestResultsManager
+from utils.artifacts import ARTIFACTS_BY_PROFESSION
 
 router = Router()
 
