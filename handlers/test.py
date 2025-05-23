@@ -620,7 +620,7 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
         artifact = ARTIFACTS_BY_PROFESSION[top_profession].get(artifact_lang) or ARTIFACTS_BY_PROFESSION[top_profession].get('ru')
     
     # --- Получаем список артефактов пользователя ---
-    user = UserManager.get_user_by_telegram_id(user_id)
+    user = await UserManager.get_user(user_id)
     user_artifacts = user.artifacts if user else []
     
     # --- Проверяем, есть ли этот артефакт ---
@@ -642,7 +642,7 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
                     user_data['opened_profiles'] = json.dumps(user_data['opened_profiles'], ensure_ascii=False)
                 if user_data.get('language') not in ['ru', 'ky']:
                     user_data['language'] = normalize_lang(user_data.get('language', 'ru'))
-                UserManager.update_user(user_id, **user_data)
+                await UserManager.update_user(user_id, **user_data)
             if new_artifact:
                 await message_or_callback.answer(f"🎉 Ты получил новый артефакт: <b>{artifact_key}</b>!" if lang == 'ru' else f"🎉 Сен жаңы артефакт алдың: <b>{artifact_key}</b>!", parse_mode="HTML")
         except Exception as e:
@@ -656,7 +656,7 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
         opened_profiles = set(user.opened_profiles or [])
         opened_profiles.add(top_profession)
         user.opened_profiles = list(opened_profiles)
-        UserManager.update_user(user_id, opened_profiles=user.opened_profiles)
+        await UserManager.update_user(user_id, opened_profiles=user.opened_profiles)
     
     # --- КРАСИВОЕ ОФОРМЛЕНИЕ ---
     lines = []
@@ -742,13 +742,12 @@ async def show_test_result(message_or_callback, state: FSMContext, all_collected
                 "lang": artifact_lang
             }, ensure_ascii=False)
         }
-        TestResultsManager.add_test_result(test_result)
+        await TestResultsManager.add_test_result(test_result)
     except Exception as e:
         print(f"[ERROR] Не удалось сохранить результат теста: {e}")
 
     # --- УДАЛЯЕМ ПРОГРЕСС ---
-    user_id = message_or_callback.from_user.id if hasattr(message_or_callback, 'from_user') else message_or_callback.message.from_user.id
-    TestProgressManager.delete_progress(user_id)
+    await TestProgressManager.delete_progress(user_id)
 
 @router.callback_query(F.data == "restart_test")
 async def restart_test_callback(callback: CallbackQuery, state: FSMContext):
@@ -769,7 +768,7 @@ async def handle_personal_scene_callback(callback: CallbackQuery, state: FSMCont
 @router.message(F.text.in_(["🗝️ Коллекция артефактов", "🗝️ Артефакттар коллекциясы"]))
 async def show_artifact_collection(message: Message):
     user_id = message.from_user.id
-    user = UserManager.get_user_by_telegram_id(user_id)
+    user = await UserManager.get_user(user_id)
     user_artifacts = set(user.artifacts or [])
     lang = await get_user_lang(user_id)
     artifact_lang = lang
@@ -803,7 +802,7 @@ async def show_artifact_collection(message: Message):
 @router.callback_query(F.data.regexp(r'^artifact_branch:'))
 async def show_artifacts_by_branch(callback: CallbackQuery):
     user_id = callback.from_user.id
-    user = UserManager.get_user_by_telegram_id(user_id)
+    user = await UserManager.get_user(user_id)
     user_artifacts = set(user.artifacts or [])
     lang = await get_user_lang(user_id)
     artifact_lang = lang
@@ -898,7 +897,7 @@ async def artifact_choose_profile(callback: CallbackQuery):
 @router.message(F.text.in_(["🗝️ Порталы", "🗝️ Порталдар"]))
 async def show_portals(message: Message):
     user_id = message.from_user.id
-    user = UserManager.get_user_by_telegram_id(user_id)
+    user = await UserManager.get_user(user_id)
     opened_profiles = user.opened_profiles or []
     # --- Автокоррекция: заменяем кыргызские профили на русские ---
     corrected_profiles = []
@@ -911,7 +910,7 @@ async def show_portals(message: Message):
             corrected_profiles.append(prof)
     if changed:
         user.opened_profiles = corrected_profiles
-        UserManager.update_user(user_id, opened_profiles=user.opened_profiles)
+        await UserManager.update_user(user_id, opened_profiles=user.opened_profiles)
         print(f"[DEBUG] Исправлены opened_profiles: {corrected_profiles}")
     opened_profiles = corrected_profiles
     lang = await get_user_lang(user_id)
@@ -954,7 +953,7 @@ async def start_personal_portal(callback: CallbackQuery, state: FSMContext):
         profession_scores={}
     )
     # --- Сохраняем открытый профиль (всегда на русском) ---
-    user = UserManager.get_user_by_telegram_id(callback.from_user.id)
+    user = await UserManager.get_user(callback.from_user.id)
     opened_profiles = set(user.opened_profiles or [])
     # --- Автокоррекция при сохранении ---
     corrected_profiles = set()
@@ -965,7 +964,7 @@ async def start_personal_portal(callback: CallbackQuery, state: FSMContext):
             corrected_profiles.add(prof)
     corrected_profiles.add(profile_name)
     user.opened_profiles = list(corrected_profiles)
-    UserManager.update_user(callback.from_user.id, opened_profiles=user.opened_profiles)
+    await UserManager.update_user(callback.from_user.id, opened_profiles=user.opened_profiles)
     await send_scene(callback, personal_scenes[0], scene_type='personal', state=state)
     await callback.answer()
 
