@@ -536,7 +536,7 @@ async def handle_scene_callback(callback: CallbackQuery, state: FSMContext):
                 profession_scores[prof_name] = profession_scores.get(prof_name, 0) + prof.get('weight', 1)
     
     # --- Если персональные сцены закончились — выводим результат ---
-    if scene_type == 'personal' and scene_index+1 >= len(all_scenes):
+    if scene_type == 'personal' and (scene_index+1 >= len(all_scenes)):
         print(f"[DEBUG] Завершение персональных сцен: scene_index={scene_index}, len(all_scenes)={len(all_scenes)}")
         await show_test_result(callback, state)
         return
