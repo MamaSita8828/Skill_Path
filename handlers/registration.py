@@ -150,11 +150,11 @@ async def reg_city(message: Message, state: FSMContext):
     )
     if success:
         msg = get_message("registration_done", lang) or get_message("registration_done", "ru")
-                await message.answer(msg, reply_markup=None)
-                await start_test_flow(message, state)
-            else:
+        await message.answer(msg, reply_markup=None)
+        await start_test_flow(message, state)
+    else:
         msg = get_message("registration_error", lang) or get_message("registration_error", "ru")
-                await message.answer(msg, reply_markup=None)
+        await message.answer(msg, reply_markup=None)
     await state.clear()
 
 def register_registration_handlers(dispatcher):
