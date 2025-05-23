@@ -527,22 +527,28 @@ async def handle_scene_callback(callback: CallbackQuery, state: FSMContext):
     
     # --- Если персональные сцены закончились — выводим результат ---
     if scene_type == 'personal' and scene_index+1 >= len(all_scenes):
+        print(f"[DEBUG] Завершение персональных сцен: scene_index={scene_index}, len(all_scenes)={len(all_scenes)}")
         await show_test_result(callback, state)
         return
     
     # --- Переход к следующей сцене ---
-    await state.update_data(scene_index=scene_index+1, profile_scores=profile_scores, profession_scores=profession_scores)
-    next_scene = all_scenes[scene_index+1]
-    await send_scene(callback, next_scene, scene_type=scene_type, state=state)
-    # --- СОХРАНЯЕМ ПРОГРЕСС ---
-    await TestProgressManager.save_progress(
-        callback.from_user.id,
-        scene_index+1,
-        all_scenes,
-        profile_scores,
-        profession_scores,
-        lang
-    )
+    if scene_index+1 < len(all_scenes):
+        await state.update_data(scene_index=scene_index+1, profile_scores=profile_scores, profession_scores=profession_scores)
+        next_scene = all_scenes[scene_index+1]
+        await send_scene(callback, next_scene, scene_type=scene_type, state=state)
+        # --- СОХРАНЯЕМ ПРОГРЕСС ---
+        await TestProgressManager.save_progress(
+            callback.from_user.id,
+            scene_index+1,
+            all_scenes,
+            profile_scores,
+            profession_scores,
+            lang
+        )
+    else:
+        # Если вдруг вышли за пределы массива, явно вызываем show_test_result
+        print(f"[DEBUG] Индекс вне диапазона: scene_index={scene_index}, len(all_scenes)={len(all_scenes)}")
+        await show_test_result(callback, state)
 
 async def show_test_result(message_or_callback, state: FSMContext, all_collected=False):
     data = await state.get_data()
