@@ -444,6 +444,8 @@ async def send_scene(message_or_callback, scene, scene_type='main', state=None, 
 async def handle_scene_callback(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     all_scenes = data.get('all_scenes', [])
+    scene_index = data.get('scene_index', 0)
+    print(f"[DEBUG] handle_scene_callback: scene_type={callback.data.split(':', 1)[0]}, scene_index={scene_index}, len(all_scenes)={len(all_scenes)}")
     if not all_scenes:
         lang = data.get('lang', 'ru')
         await callback.message.answer(
@@ -453,7 +455,6 @@ async def handle_scene_callback(callback: CallbackQuery, state: FSMContext):
         )
         await state.clear()
         return
-    scene_index = data.get('scene_index', 0)
     profile_scores = data.get('profile_scores', {})
     profession_scores = data.get('profession_scores', {})
     lang = data.get('lang', 'ru')
