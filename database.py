@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 import re
 import logging
+import time
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -17,19 +18,23 @@ load_dotenv()
 
 def parse_mysql_url(url):
     """Парсинг MYSQL_URL в параметры подключения"""
-    # Пример: mysql://user:pass@host:port/dbname
-    regex = r"mysql:\/\/(.*?):(.*?)@(.*?):(\d+)\/(.*)"
-    match = re.match(regex, url)
-    if not match:
-        raise ValueError("MYSQL_URL не соответствует формату mysql://user:pass@host:port/dbname")
-    user, password, host, port, db = match.groups()
-    return {
-        "user": user,
-        "password": password,
-        "host": host,
-        "port": int(port),
-        "db": db
-    }
+    try:
+        # Пример: mysql://user:pass@host:port/dbname
+        regex = r"mysql:\/\/(.*?):(.*?)@(.*?):(\d+)\/(.*)"
+        match = re.match(regex, url)
+        if not match:
+            raise ValueError("MYSQL_URL не соответствует формату mysql://user:pass@host:port/dbname")
+        user, password, host, port, db = match.groups()
+        return {
+            "user": user,
+            "password": password,
+            "host": host,
+            "port": int(port),
+            "db": db
+        }
+    except Exception as e:
+        logger.error(f"❌ Ошибка парсинга MYSQL_URL: {e}")
+        raise
 
 # Получаем параметры подключения
 mysql_url = os.getenv("MYSQL_URL")
@@ -41,29 +46,59 @@ db_params = parse_mysql_url(mysql_url)
 class Database:
     def __init__(self):
         self.pool = None
+        self.max_retries = 5
+        self.retry_delay = 5  # секунды
+        
+    async def ensure_connection(self):
+        """Проверка и восстановление подключения к БД"""
+        if not self.pool:
+            await self.connect()
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT 1")
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки подключения: {e}")
+            await self.reconnect()
+        
+    async def reconnect(self):
+        """Переподключение к базе данных"""
+        if self.pool:
+            self.pool.close()
+            await self.pool.wait_closed()
+        self.pool = None
+        await self.connect()
         
     async def connect(self):
         """Создание пула соединений с базой данных и инициализация таблиц"""
-        try:
-            self.pool = await aiomysql.create_pool(
-                host=db_params["host"],
-                port=db_params["port"],
-                user=db_params["user"],
-                password=db_params["password"],
-                db=db_params["db"],
-                charset='utf8mb4',
-                autocommit=True,
-                maxsize=10,
-                minsize=1
-            )
-            logger.info("✅ Подключение к базе данных установлено")
-            
-            # Создаем таблицы при подключении
-            await self.create_tables()
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка подключения к БД: {e}")
-            raise
+        retry_count = 0
+        while retry_count < self.max_retries:
+            try:
+                self.pool = await aiomysql.create_pool(
+                    host=db_params["host"],
+                    port=db_params["port"],
+                    user=db_params["user"],
+                    password=db_params["password"],
+                    db=db_params["db"],
+                    charset='utf8mb4',
+                    autocommit=True,
+                    maxsize=10,
+                    minsize=1,
+                    connect_timeout=10
+                )
+                logger.info("✅ Подключение к базе данных установлено")
+                
+                # Создаем таблицы при подключении
+                await self.create_tables()
+                return
+                
+            except Exception as e:
+                retry_count += 1
+                logger.error(f"❌ Попытка {retry_count}/{self.max_retries} подключения к БД не удалась: {e}")
+                if retry_count < self.max_retries:
+                    await asyncio.sleep(self.retry_delay)
+                else:
+                    raise Exception(f"Не удалось подключиться к БД после {self.max_retries} попыток")
 
     async def create_tables(self):
         """Создание необходимых таблиц, если они не существуют"""
@@ -81,8 +116,10 @@ class Database:
                     city VARCHAR(255),
                     language VARCHAR(20),
                     artifacts TEXT,
-                    opened_profiles TEXT
-                )
+                    opened_profiles TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
             'test_progress': """
                 CREATE TABLE IF NOT EXISTS test_progress (
@@ -93,20 +130,20 @@ class Database:
                     profile_scores TEXT,
                     profession_scores TEXT,
                     lang VARCHAR(10),
-                    updated_at DATETIME,
-                    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
-                )
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
             'test_results': """
                 CREATE TABLE IF NOT EXISTS test_results (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     telegram_id BIGINT,
-                    finished_at DATETIME,
+                    finished_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     profile VARCHAR(255),
                     score INT,
                     details TEXT,
-                    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
-                )
+                    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """,
             'goals': """
                 CREATE TABLE IF NOT EXISTS goals (
@@ -117,9 +154,10 @@ class Database:
                     deadline DATE,
                     priority INT,
                     progress INT DEFAULT 0,
-                    created_at DATETIME,
-                    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
-                )
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """
         }
         
@@ -136,33 +174,49 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Ошибка при создании таблиц: {e}")
             raise
-    
+
+    async def execute_query(self, query: str, params: tuple = None):
+        """Выполнение запроса без возврата данных"""
+        await self.ensure_connection()
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute(query, params)
+                    return cursor.rowcount
+        except Exception as e:
+            logger.error(f"❌ Ошибка выполнения запроса: {e}")
+            raise
+
+    async def fetch_one(self, query: str, params: tuple = None):
+        """Выполнение запроса с возвратом одной записи"""
+        await self.ensure_connection()
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    await cursor.execute(query, params)
+                    return await cursor.fetchone()
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения данных: {e}")
+            raise
+
+    async def fetch_all(self, query: str, params: tuple = None):
+        """Выполнение запроса с возвратом всех записей"""
+        await self.ensure_connection()
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    await cursor.execute(query, params)
+                    return await cursor.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения данных: {e}")
+            raise
+
     async def close(self):
         """Закрытие пула соединений"""
         if self.pool:
             self.pool.close()
             await self.pool.wait_closed()
-    
-    async def execute_query(self, query: str, params: tuple = None):
-        """Выполнение запроса без возврата данных"""
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute(query, params)
-                return cursor.rowcount
-    
-    async def fetch_one(self, query: str, params: tuple = None):
-        """Выполнение запроса с возвратом одной записи"""
-        async with self.pool.acquire() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                await cursor.execute(query, params)
-                return await cursor.fetchone()
-    
-    async def fetch_all(self, query: str, params: tuple = None):
-        """Выполнение запроса с возвратом всех записей"""
-        async with self.pool.acquire() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                await cursor.execute(query, params)
-                return await cursor.fetchall()
+            logger.info("✅ Соединение с базой данных закрыто")
 
 # Создаем глобальный экземпляр базы данных
 db = Database()
