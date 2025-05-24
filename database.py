@@ -106,7 +106,7 @@ class Database:
             'users': """
                 CREATE TABLE IF NOT EXISTS users (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    telegram_id BIGINT UNIQUE,
+                    telegram_id BIGINT UNSIGNED UNIQUE,
                     fio VARCHAR(255),
                     school VARCHAR(255),
                     class_number INT,
@@ -124,7 +124,7 @@ class Database:
             'test_progress': """
                 CREATE TABLE IF NOT EXISTS test_progress (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    telegram_id BIGINT,
+                    telegram_id BIGINT UNSIGNED,
                     current_scene VARCHAR(255),
                     all_scenes TEXT,
                     profile_scores TEXT,
@@ -137,7 +137,7 @@ class Database:
             'test_results': """
                 CREATE TABLE IF NOT EXISTS test_results (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    telegram_id BIGINT,
+                    telegram_id BIGINT UNSIGNED,
                     finished_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     profile VARCHAR(255),
                     score INT,
@@ -148,7 +148,7 @@ class Database:
             'goals': """
                 CREATE TABLE IF NOT EXISTS goals (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    telegram_id BIGINT,
+                    telegram_id BIGINT UNSIGNED,
                     title VARCHAR(255),
                     description TEXT,
                     deadline DATE,
@@ -227,35 +227,68 @@ class UserManager:
     @staticmethod
     async def create_user(telegram_id: int, fio: str, **kwargs) -> bool:
         """Создание нового пользователя"""
-        # Add debug logging
-        logger.info(f"Attempting to create user with telegram_id: {telegram_id} (type: {type(telegram_id)})")
-        
-        query = """
-        INSERT INTO users (telegram_id, fio, school, class_number, class_letter, 
-                          gender, birth_year, city, language, artifacts, opened_profiles)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        
-        params = (
-            telegram_id,
-            fio,
-            kwargs.get('school', ''),
-            kwargs.get('class_number', None),
-            kwargs.get('class_letter', ''),
-            kwargs.get('gender', ''),
-            kwargs.get('birth_year', None),
-            kwargs.get('city', ''),
-            kwargs.get('language', 'ru'),
-            kwargs.get('artifacts', ''),
-            kwargs.get('opened_profiles', '')
-        )
-        
         try:
-            await db.execute_query(query, params)
-            logger.info(f"✅ Пользователь {telegram_id} создан")
-            return True
+            # Ensure telegram_id is a positive integer
+            telegram_id = abs(int(telegram_id))
+            logger.info(f"Creating user with telegram_id: {telegram_id} (type: {type(telegram_id)})")
+            
+            # First check if user exists
+            existing_user = await UserManager.get_user(telegram_id)
+            if existing_user:
+                logger.info(f"User {telegram_id} already exists")
+                return True
+            
+            query = """
+            INSERT INTO users (telegram_id, fio, school, class_number, class_letter, 
+                              gender, birth_year, city, language, artifacts, opened_profiles)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            params = (
+                telegram_id,
+                fio,
+                kwargs.get('school', ''),
+                kwargs.get('class_number', None),
+                kwargs.get('class_letter', ''),
+                kwargs.get('gender', ''),
+                kwargs.get('birth_year', None),
+                kwargs.get('city', ''),
+                kwargs.get('language', 'ru'),
+                json.dumps(kwargs.get('artifacts', []), ensure_ascii=False),
+                json.dumps(kwargs.get('opened_profiles', []), ensure_ascii=False)
+            )
+            
+            try:
+                # Ensure tables have correct column types
+                await db.execute_query("""
+                    ALTER TABLE users 
+                    MODIFY COLUMN telegram_id BIGINT UNSIGNED UNIQUE
+                """)
+                await db.execute_query("""
+                    ALTER TABLE test_progress 
+                    MODIFY COLUMN telegram_id BIGINT UNSIGNED
+                """)
+                await db.execute_query("""
+                    ALTER TABLE test_results 
+                    MODIFY COLUMN telegram_id BIGINT UNSIGNED
+                """)
+                await db.execute_query("""
+                    ALTER TABLE goals 
+                    MODIFY COLUMN telegram_id BIGINT UNSIGNED
+                """)
+                
+                # Create user
+                await db.execute_query(query, params)
+                logger.info(f"✅ User {telegram_id} created successfully")
+                return True
+            except Exception as e:
+                logger.error(f"❌ Error creating user: {e}")
+                if "Duplicate entry" in str(e):
+                    logger.info(f"User {telegram_id} already exists (duplicate entry)")
+                    return True
+                return False
         except Exception as e:
-            logger.error(f"❌ Ошибка создания пользователя: {e}")
+            logger.error(f"❌ Error in create_user: {e}")
             return False
     
     @staticmethod

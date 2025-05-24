@@ -5,11 +5,12 @@ import signal
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.enums import ParseMode
+from database import db, UserManager, TestProgressManager, TestResultsManager
 
 # Импорт обработчиков
 from handlers import commands, callbacks, messages, goals, materials, test, registration
 from config import settings
-from database import db, UserManager, TestProgressManager, TestResultsManager
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -26,10 +27,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Инициализация бота и диспетчера
-bot = Bot(token=settings.BOT_TOKEN)
+bot = Bot(token=settings.BOT_TOKEN, parse_mode=ParseMode.HTML)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
+# Flag to track if shutdown is in progress
+is_shutting_down = False
 
 # Регистрация обработчиков
 def register_handlers(dispatcher):
@@ -64,6 +67,13 @@ async def on_startup():
 
 async def on_shutdown():
     """Действия при остановке бота"""
+    global is_shutting_down
+    if is_shutting_down:
+        return
+    
+    is_shutting_down = True
+    logger.info("Shutting down bot...")
+    
     try:
         # Закрытие соединения с базой данных
         await db.close()
@@ -77,31 +87,44 @@ async def on_shutdown():
         logger.error(f"❌ Ошибка при остановке: {e}")
 
 
+def handle_signal(signum, frame):
+    """Handle system signals for graceful shutdown"""
+    logger.info(f"Received signal {signum}")
+    asyncio.create_task(on_shutdown())
+
+
 async def main():
     """Основная функция запуска бота"""
     try:
         # Регистрация обработчиков сигналов
         loop = asyncio.get_event_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, lambda: asyncio.create_task(on_shutdown()))
+            loop.add_signal_handler(sig, handle_signal)
         
         # Запуск бота
         await on_startup()
         logger.info("🚀 Бот запущен")
+        
+        # Set up startup and shutdown handlers
+        dp.startup.register(on_startup)
+        dp.shutdown.register(on_shutdown)
+        
+        # Запуск бота
         await dp.start_polling(bot)
         
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}")
         raise
     finally:
-        await on_shutdown()
+        if not is_shutting_down:
+            await on_shutdown()
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("👋 Бот остановлен")
+    except KeyboardInterrupt:
+        logger.info("Received keyboard interrupt")
     except Exception as e:
         logger.error(f"❌ Необработанная ошибка: {e}")
         raise

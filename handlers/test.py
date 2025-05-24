@@ -792,35 +792,58 @@ async def handle_personal_scene_callback(callback: CallbackQuery, state: FSMCont
 async def show_artifact_collection(message: Message):
     user_id = message.from_user.id
     user = await UserManager.get_user(user_id)
-    user_artifacts = set(user.artifacts or [])
     lang = await get_user_lang(user_id)
-    artifact_lang = lang
-    branch_names = {
-        'ru': {
-            'technical': 'Технический',
-            'natural_science': 'Естественно-научный',
-            'humanitarian': 'Гуманитарный',
-            'social_economic': 'Социально-экономический',
-            'creative_art': 'Творческо-художественный',
-            'applied_technology': 'Прикладно-технологический',
-        },
-        'ky': {
-            'technical': 'Техникалык',
-            'natural_science': 'Жаратылыш таануу',
-            'humanitarian': 'Гуманитардык',
-            'social_economic': 'Социалдык-экономикалык',
-            'creative_art': 'Творчестволук-көркөм',
-            'applied_technology': 'Колдонмо-технологиялык',
-        }
-    }[artifact_lang]
-    kb = InlineKeyboardBuilder()
-    for branch, name in branch_names.items():
-        kb.button(text=name, callback_data=f"artifact_branch:{branch}")
-    kb.adjust(2)
-    await message.answer(
-        "Выберите профиль для просмотра артефактов:" if artifact_lang == 'ru' else "Артефакттарды көрүү үчүн профилди тандаңыз:",
-        reply_markup=kb.as_markup()
-    )
+    
+    if not user:
+        await message.answer(
+            "Пожалуйста, сначала пройдите регистрацию." if lang == 'ru' else 
+            "Алгач катталуудан өтүңүз.",
+            parse_mode="HTML"
+        )
+        return
+    
+    try:
+        # Parse artifacts from JSON string if it's a string, otherwise use empty list
+        user_artifacts = json.loads(user.artifacts) if isinstance(user.artifacts, str) else (user.artifacts or [])
+        user_artifacts = set(user_artifacts)
+        
+        artifact_lang = lang
+        branch_names = {
+            'ru': {
+                'technical': 'Технический',
+                'natural_science': 'Естественно-научный',
+                'humanitarian': 'Гуманитарный',
+                'social_economic': 'Социально-экономический',
+                'creative_art': 'Творческо-художественный',
+                'applied_technology': 'Прикладно-технологический',
+            },
+            'ky': {
+                'technical': 'Техникалык',
+                'natural_science': 'Жаратылыш таануу',
+                'humanitarian': 'Гуманитардык',
+                'social_economic': 'Социалдык-экономикалык',
+                'creative_art': 'Творчестволук-көркөм',
+                'applied_technology': 'Колдонмо-технологиялык',
+            }
+        }[artifact_lang]
+        
+        kb = InlineKeyboardBuilder()
+        for branch, name in branch_names.items():
+            kb.button(text=name, callback_data=f"artifact_branch:{branch}")
+        kb.adjust(2)
+        
+        await message.answer(
+            "Выберите профиль для просмотра артефактов:" if artifact_lang == 'ru' else 
+            "Артефакттарды көрүү үчүн профилди тандаңыз:",
+            reply_markup=kb.as_markup()
+        )
+    except Exception as e:
+        logger.error(f"Error in show_artifact_collection: {e}")
+        await message.answer(
+            "Произошла ошибка при загрузке коллекции. Пожалуйста, попробуйте позже." if lang == 'ru' else
+            "Коллекцияны жүктөөдө ката кетти. Кийинчерээк аракет кылып көрүңүз.",
+            parse_mode="HTML"
+        )
 
 @router.callback_query(F.data.regexp(r'^artifact_branch:'))
 async def show_artifacts_by_branch(callback: CallbackQuery):
