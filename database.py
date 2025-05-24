@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 # Загружаем переменные окружения
 load_dotenv()
 
-# --- ДОБАВЛЕНО: парсер DATABASE_URL для Railway ---
-def parse_database_url(url):
+def parse_mysql_url(url):
+    """Парсинг MYSQL_URL в параметры подключения"""
     # Пример: mysql://user:pass@host:port/dbname
     regex = r"mysql:\/\/(.*?):(.*?)@(.*?):(\d+)\/(.*)"
     match = re.match(regex, url)
     if not match:
-        raise ValueError("DATABASE_URL не соответствует формату mysql://user:pass@host:port/dbname")
+        raise ValueError("MYSQL_URL не соответствует формату mysql://user:pass@host:port/dbname")
     user, password, host, port, db = match.groups()
     return {
         "user": user,
@@ -31,25 +31,19 @@ def parse_database_url(url):
         "db": db
     }
 
-# --- Получаем параметры подключения ---
-db_url = os.getenv("DATABASE_URL")
-if db_url:
-    db_params = parse_database_url(db_url)
-else:
-    db_params = {
-        "user": os.getenv("MYSQL_USER"),
-        "password": os.getenv("MYSQL_PASSWORD"),
-        "host": os.getenv("MYSQL_HOST"),
-        "port": int(os.getenv("MYSQL_PORT", 3306)),
-        "db": os.getenv("MYSQL_DB")
-    }
+# Получаем параметры подключения
+mysql_url = os.getenv("MYSQL_URL")
+if not mysql_url:
+    raise ValueError("MYSQL_URL не найден в переменных окружения")
+
+db_params = parse_mysql_url(mysql_url)
 
 class Database:
     def __init__(self):
         self.pool = None
         
     async def connect(self):
-        """Создание пула соединений с базой данных"""
+        """Создание пула соединений с базой данных и инициализация таблиц"""
         try:
             self.pool = await aiomysql.create_pool(
                 host=db_params["host"],
@@ -63,8 +57,84 @@ class Database:
                 minsize=1
             )
             logger.info("✅ Подключение к базе данных установлено")
+            
+            # Создаем таблицы при подключении
+            await self.create_tables()
+            
         except Exception as e:
             logger.error(f"❌ Ошибка подключения к БД: {e}")
+            raise
+
+    async def create_tables(self):
+        """Создание необходимых таблиц, если они не существуют"""
+        tables = {
+            'users': """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    telegram_id BIGINT UNIQUE,
+                    fio VARCHAR(255),
+                    school VARCHAR(255),
+                    class_number INT,
+                    class_letter VARCHAR(10),
+                    gender VARCHAR(10),
+                    birth_year INT,
+                    city VARCHAR(255),
+                    language VARCHAR(20),
+                    artifacts TEXT,
+                    opened_profiles TEXT
+                )
+            """,
+            'test_progress': """
+                CREATE TABLE IF NOT EXISTS test_progress (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    telegram_id BIGINT,
+                    current_scene VARCHAR(255),
+                    all_scenes TEXT,
+                    profile_scores TEXT,
+                    profession_scores TEXT,
+                    lang VARCHAR(10),
+                    updated_at DATETIME,
+                    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
+                )
+            """,
+            'test_results': """
+                CREATE TABLE IF NOT EXISTS test_results (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    telegram_id BIGINT,
+                    finished_at DATETIME,
+                    profile VARCHAR(255),
+                    score INT,
+                    details TEXT,
+                    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
+                )
+            """,
+            'goals': """
+                CREATE TABLE IF NOT EXISTS goals (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    telegram_id BIGINT,
+                    title VARCHAR(255),
+                    description TEXT,
+                    deadline DATE,
+                    priority INT,
+                    progress INT DEFAULT 0,
+                    created_at DATETIME,
+                    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
+                )
+            """
+        }
+        
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    for table_name, create_query in tables.items():
+                        try:
+                            await cursor.execute(create_query)
+                            logger.info(f"✅ Таблица {table_name} проверена/создана")
+                        except Exception as e:
+                            logger.error(f"❌ Ошибка создания таблицы {table_name}: {e}")
+                            raise
+        except Exception as e:
+            logger.error(f"❌ Ошибка при создании таблиц: {e}")
             raise
     
     async def close(self):
@@ -103,6 +173,9 @@ class UserManager:
     @staticmethod
     async def create_user(telegram_id: int, fio: str, **kwargs) -> bool:
         """Создание нового пользователя"""
+        # Add debug logging
+        logger.info(f"Attempting to create user with telegram_id: {telegram_id} (type: {type(telegram_id)})")
+        
         query = """
         INSERT INTO users (telegram_id, fio, school, class_number, class_letter, 
                           gender, birth_year, city, language, artifacts, opened_profiles)
