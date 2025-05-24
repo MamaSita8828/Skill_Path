@@ -1,13 +1,14 @@
-aiomysql==0.2.0
-aiogram==3.4.1
+aiogram>=3.0.0
 python-dotenv==1.0.0
 pytest==7.4.3
 pytest-asyncio==0.21.1
 flake8==6.1.0
 redis==5.0.1
+aiohttp==3.9.1
 python-dateutil==2.8.2
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
 fastapi
 uvicorn
 mysql-connector-python
+requests>=2.31.0
